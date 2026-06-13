@@ -1,18 +1,18 @@
 {
-    "id": "resources",
-    "name": "Resources",
-    "author": "JoanFo",
-    "version": "1.0.0",
-    "description": "This simple plugin provides you a way to easily download mods and modpacks",
-    "category": "plugin",
-    "url": "",
-    "update_url": "",
-    "namespace": "JoanFo\\Resources",
-    "class": "ResourcesPlugin",
-    "panels": [
-        "admin",
-        "server"
-    ],
-    "panel_version": null,
-    "composer_packages": []
+  "id": "resources",
+  "name": "Resources",
+  "author": "JoanFo",
+  "version": "1.0.0",
+  "description": "This simple plugin provides you a way to easily download mods and modpacks",
+  "category": "plugin",
+  "url": "",
+  "update_url": "",
+  "namespace": "JoanFo\\Resources",
+  "class": "ResourcesPlugin",
+  "panels": [
+    "admin",
+    "server"
+  ],
+  "panel_version": null,
+  "composer_packages": []
 }
