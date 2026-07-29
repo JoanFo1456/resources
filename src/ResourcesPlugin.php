@@ -34,6 +34,17 @@ class ResourcesPlugin implements HasPluginSettings, Plugin
 
     public function boot(Panel $panel): void {}
 
+    public function getSettingsFormData(): array
+    {
+        return [
+            'curseforge_api_key' => config('resources.curseforge_api_key'),
+            'enable_modrinth' => config('resources.platforms.modrinth'),
+            'enable_curseforge' => config('resources.platforms.curseforge'),
+            'enable_bukkit' => config('resources.platforms.bukkit'),
+            'enable_spigot' => config('resources.platforms.spigot'),
+        ];
+    }
+
     public function getSettingsForm(): array
     {
         return [

@@ -74,19 +74,27 @@ class ModrinthService
     }
 
     /**
-     * Get all versions of a project.
+     * Get all versions of a project, optionally filtered by game version and/or mod loader.
      *
      * @return array<int, array<string, mixed>>
      */
-    public function getProjectVersions(string $idOrSlug): array
+    public function getProjectVersions(string $idOrSlug, ?string $gameVersion = null, ?string $loader = null): array
     {
-        $cacheKey = 'modrinth_versions_'.$idOrSlug;
+        $cacheKey = 'modrinth_versions_'.$idOrSlug.($gameVersion ? '_'.$gameVersion : '').($loader ? '_'.$loader : '');
 
         if ($this->cacheEnabled && Cache::has($cacheKey)) {
             return Cache::get($cacheKey);
         }
 
-        $response = $this->client()->get("/project/{$idOrSlug}/version");
+        $params = [];
+        if ($gameVersion) {
+            $params['game_versions'] = json_encode([$gameVersion]);
+        }
+        if ($loader) {
+            $params['loaders'] = json_encode([$loader]);
+        }
+
+        $response = $this->client()->get("/project/{$idOrSlug}/version", $params);
 
         if ($response->failed()) {
             return [];
@@ -106,9 +114,9 @@ class ModrinthService
      *
      * @return array<int, array{id: string, name: string}>
      */
-    public function getVersionOptions(string $idOrSlug): array
+    public function getVersionOptions(string $idOrSlug, ?string $gameVersion = null, ?string $loader = null): array
     {
-        return collect($this->getProjectVersions($idOrSlug))->map(fn ($version) => [
+        return collect($this->getProjectVersions($idOrSlug, $gameVersion, $loader))->map(fn ($version) => [
             'id' => $version['id'],
             'name' => $version['name'].' ('.implode(', ', array_slice($version['game_versions'] ?? [], 0, 3)).')',
         ])->all();
@@ -140,6 +148,55 @@ class ModrinthService
         }
 
         return $version;
+    }
+
+    public function getProjectIcon(string $projectId): ?string
+    {
+        $cacheKey = 'modrinth_project_icon_'.$projectId;
+
+        if ($this->cacheEnabled && Cache::has($cacheKey)) {
+            return Cache::get($cacheKey) ?: null;
+        }
+
+        $response = $this->client()->get("/project/{$projectId}");
+        $icon = $response->successful() ? ($response->json('icon_url') ?: '') : '';
+
+        if ($this->cacheEnabled) {
+            Cache::put($cacheKey, $icon, $this->cacheTtl);
+        }
+
+        return $icon ?: null;
+    }
+
+    /**
+     * Identify installed files by their hash.
+     *
+     * Uses the batch endpoint POST /version_files with body
+     * {"hashes": [...], "algorithm": "sha1"}. The response maps each hash to the
+     * version object that owns a file with that hash; the version object contains
+     * `project_id` and `id` (the version id).
+     *
+     * @param  array<int, string>  $hashes
+     * @return array<string, array<string, mixed>>  Map of hash => version object
+     */
+    public function lookupByHashes(array $hashes, string $algorithm = 'sha1'): array
+    {
+        $hashes = array_values(array_unique(array_filter($hashes)));
+
+        if (empty($hashes)) {
+            return [];
+        }
+
+        $response = $this->client()->post('/version_files', [
+            'hashes' => $hashes,
+            'algorithm' => $algorithm,
+        ]);
+
+        if ($response->failed()) {
+            return [];
+        }
+
+        return $response->json() ?? [];
     }
 
     /**

@@ -17,6 +17,41 @@ return [
         'source' => 'Source',
     ],
 
+    'view' => [
+        'remote' => 'Browse Remote',
+        'installed' => 'Installed',
+        'grid' => 'Grid View',
+        'list' => 'List View',
+    ],
+
+    'installed' => [
+        'empty_heading' => 'No files installed',
+        'empty_description' => 'No mods or plugins have been installed in the /mods or /plugins directories.',
+        'search_placeholder' => 'Search installed files...',
+        'version' => 'Version',
+        'size' => 'Size',
+        'directory' => 'Directory',
+        'modified' => 'Modified',
+        'update' => 'Update',
+        'update_all' => 'Update All',
+        'update_all_done' => ':count file(s) updated successfully.',
+        'update_all_failed' => ':count file(s) skipped (no source tracked — re-download to enable updates).',
+        'update_heading' => 'Update :name',
+        'update_started' => 'Update downloading',
+        'delete' => 'Delete',
+        'delete_heading' => 'Delete :name',
+        'delete_confirm' => 'Are you sure you want to permanently delete this file? This cannot be undone.',
+        'delete_action' => 'Yes, delete',
+        'deleted' => 'File deleted',
+        'deleted_body' => ':name has been deleted.',
+        'delete_failed' => 'Delete failed',
+    ],
+
+    'preview' => [
+        'action' => 'Preview',
+        'close' => 'Close',
+    ],
+
     'filters' => [
         'label' => 'Filters',
         'platform' => 'Platform',
@@ -53,6 +88,25 @@ return [
         'installed' => 'Modpack installed',
         'installed_body' => ':name has been installed successfully.',
         'failed' => 'Modpack installation failed',
+    ],
+
+    'installed_modpacks' => [
+        'title' => 'Installed Modpacks',
+        'navigation' => 'Installed Modpacks',
+        'heading' => 'Installed Modpacks',
+        'count' => ':count modpack installed|:count modpacks installed',
+        'version' => 'Version',
+        'modloader' => 'Modloader',
+        'installed_at' => 'Installed',
+        'remove' => 'Remove from list',
+        'remove_confirm' => 'Remove :name from tracking?',
+        'removed' => 'Removed from list',
+        'update' => 'Update',
+        'update_available' => ':version available',
+        'update_confirm' => 'Update :name to the latest version?',
+        'browse' => 'Browse Modpacks',
+        'empty_heading' => 'No modpacks installed',
+        'empty_description' => 'Modpacks you install will appear here for easy tracking and updates.',
     ],
 
     'curseforge_error' => 'CurseForge error',

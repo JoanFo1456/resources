@@ -14,5 +14,9 @@
         "server"
     ],
     "panel_version": null,
-    "composer_packages": []
+    "composer_packages": [],
+    "meta": {
+        "status": "enabled",
+        "status_message": null
+    }
 }

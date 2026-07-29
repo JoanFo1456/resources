@@ -24,20 +24,22 @@ class Record extends JsonCachedModel
 {
     /** @var array<string, string> */
     protected $schema = [
-        'id' => 'string',
-        'project_id' => 'string',
-        'slug' => 'string',
-        'name' => 'string',
-        'description' => 'text',
-        'author' => 'string',
-        'icon' => 'string',
-        'downloads' => 'integer',
-        'type' => 'string',
-        'source' => 'string',
-        'search_query' => 'string',
-        'project_type' => 'string',
-        'api_page' => 'integer',
-        'api_index' => 'integer',
+        'id'             => 'string',
+        'project_id'     => 'string',
+        'slug'           => 'string',
+        'name'           => 'string',
+        'description'    => 'text',
+        'author'         => 'string',
+        'icon'           => 'string',
+        'downloads'      => 'integer',
+        'type'           => 'string',
+        'loader'         => 'string',
+        'loader_detected' => 'boolean',
+        'source'         => 'string',
+        'search_query'   => 'string',
+        'project_type'   => 'string',
+        'api_page'       => 'integer',
+        'api_index'      => 'integer',
     ];
 
     protected static function cacheFilename(): string
@@ -57,6 +59,7 @@ class Record extends JsonCachedModel
                 && ($record['project_type'] ?? '') === $projectType
                 && in_array($record['source'] ?? '', $sources, true)
                 && ($record['api_page'] ?? 0) === $page
+                && !empty($record['loader_detected'])
             ) {
                 return true;
             }

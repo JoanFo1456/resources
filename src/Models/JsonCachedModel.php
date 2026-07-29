@@ -4,6 +4,7 @@ namespace JoanFo\Resources\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\File;
+use JoanFo\Resources\Models\Concerns\AtomicJsonFile;
 use Sushi\Sushi;
 
 /**
@@ -15,6 +16,7 @@ use Sushi\Sushi;
  */
 abstract class JsonCachedModel extends Model
 {
+    use AtomicJsonFile;
     use Sushi;
 
     protected $primaryKey = 'id';
@@ -22,6 +24,9 @@ abstract class JsonCachedModel extends Model
     protected $keyType = 'string';
 
     public $incrementing = false;
+
+    /** Subclasses define the column schema used to normalize rows before Sushi inserts them. */
+    protected $schema = [];
 
     /** @var array<string, array<string, array<string, mixed>>> */
     private static array $memoryStore = [];
@@ -41,7 +46,15 @@ abstract class JsonCachedModel extends Model
      */
     public function getRows(): array
     {
-        return array_values(static::readCache());
+        // Normalize every row against the schema so all rows have the same keys.
+        // Without this, rows written before a schema change cause Sushi's batch
+        // INSERT to fail with "all VALUES must have the same number of terms".
+        $defaults = array_fill_keys(array_keys($this->schema), null);
+
+        return array_values(array_map(
+            fn (array $row): array => array_merge($defaults, $row),
+            static::readCache(),
+        ));
     }
 
     public static function getCachePath(): string
@@ -64,13 +77,7 @@ abstract class JsonCachedModel extends Model
             return self::$memoryStore[static::cacheFilename()] ?? [];
         }
 
-        $path = static::getCachePath();
-
-        if (!File::exists($path)) {
-            return [];
-        }
-
-        return json_decode(File::get($path), true) ?: [];
+        return static::readJsonFile(static::getCachePath()) ?? [];
     }
 
     /**
@@ -84,9 +91,6 @@ abstract class JsonCachedModel extends Model
             return;
         }
 
-        $path = static::getCachePath();
-
-        File::put($path, json_encode($data), lock: true);
-        @chmod($path, 0664);
+        static::writeJsonFile(static::getCachePath(), $data);
     }
 }

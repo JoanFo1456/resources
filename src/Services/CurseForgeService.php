@@ -159,19 +159,259 @@ class CurseForgeService
      *
      * @return array<int, array{id: string, name: string}>
      */
-    public function getVersionOptions(int $modId): array
+    public function getVersionOptions(int $modId, ?string $gameVersion = null): array
     {
-        return collect($this->getModFiles($modId))->map(function ($file) {
-            $gameVersions = collect($file['gameVersions'] ?? [])
-                ->filter(fn ($version) => preg_match('/^\d+\.\d+/', $version))
-                ->take(3)
-                ->implode(', ');
+        return collect($this->getModFiles($modId))
+            ->when($gameVersion, fn ($col) => $col->filter(
+                fn ($file) => in_array($gameVersion, $file['gameVersions'] ?? [], true)
+            ))
+            ->map(function ($file) {
+                $gameVersions = collect($file['gameVersions'] ?? [])
+                    ->filter(fn ($version) => preg_match('/^\d+\.\d+/', $version))
+                    ->take(3)
+                    ->implode(', ');
 
-            return [
-                'id' => (string) $file['id'],
-                'name' => $file['displayName'].($gameVersions ? ' ('.$gameVersions.')' : ''),
-            ];
-        })->all();
+                return [
+                    'id' => (string) $file['id'],
+                    'name' => $file['displayName'].($gameVersions ? ' ('.$gameVersions.')' : ''),
+                ];
+            })->values()->all();
+    }
+
+    /**
+     * Get download URLs for multiple files in one API call.
+     * Chunks into batches of 50 to stay within API limits.
+     *
+     * @param  int[]  $fileIds
+     * @return array<int, string|null>  Map of fileId → downloadUrl (null if unavailable)
+     */
+    public function getDownloadUrls(array $fileIds): array
+    {
+        if (!$this->isConfigured() || empty($fileIds)) {
+            return [];
+        }
+
+        $results = [];
+
+        foreach (array_chunk($fileIds, 50) as $chunk) {
+            $response = $this->client()->post('/mods/files', ['fileIds' => $chunk]);
+
+            if ($response->failed()) {
+                continue;
+            }
+
+            foreach ($response->json()['data'] ?? [] as $file) {
+                $url = $file['downloadUrl'] ?? null;
+                if ($url !== null) {
+                    $url = str_replace('edge.forgecdn.net', 'mediafilez.forgecdn.net', $url);
+                } elseif (!empty($file['id'])) {
+                    // Author disabled API distribution (downloadUrl is null) — recover the file
+                    // via the keyless redirect endpoint so it isn't silently skipped.
+                    $url = $this->nullDownloadFallback(
+                        (int) ($file['modId'] ?? 0),
+                        (int) $file['id'],
+                        (string) ($file['fileName'] ?? ''),
+                    );
+                }
+                $results[(int) $file['id']] = $url;
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Best available URL for a file whose official downloadUrl came back null (author opted out
+     * of third-party API distribution). Prefers the keyless redirect endpoint — it needs only
+     * the project + file id, injects the required analytics api-key itself, and works even under
+     * the July 2026 rule that direct CDN pulls carry an api-key. Falls back to a hand-built CDN
+     * path only when the project id is unknown.
+     */
+    private function nullDownloadFallback(int $modId, int $fileId, string $fileName): ?string
+    {
+        if ($modId > 0 && $fileId > 0) {
+            return self::keylessDownloadUrl($modId, $fileId);
+        }
+
+        return ($fileId > 0 && $fileName !== '')
+            ? self::forgeCdnUrl($fileId, $fileName)
+            : null;
+    }
+
+    /**
+     * CurseForge's website API endpoint that 307-redirects to the actual CDN file. Requires no
+     * x-api-key (the redirect appends CurseForge's own analytics key), needs only the project and
+     * file ids — both present in a modpack manifest — and so consumes no api.curseforge.com quota.
+     * Unofficial/undocumented: used only as a fallback. The redirect resolves the real filename,
+     * so pull this with use_header enabled.
+     */
+    public static function keylessDownloadUrl(int $modId, int $fileId): string
+    {
+        return "https://www.curseforge.com/api/v1/mods/{$modId}/files/{$fileId}/download";
+    }
+
+    /**
+     * Build the direct CurseForge CDN URL for a file. CurseForge lays files out as
+     * /files/<intdiv(id,1000)>/<id % 1000>/<fileName>, with the second segment as a plain integer
+     * (no zero-padding). Last-resort fallback when the project id isn't known.
+     */
+    public static function forgeCdnUrl(int $fileId, string $fileName): string
+    {
+        return sprintf(
+            'https://mediafilez.forgecdn.net/files/%d/%d/%s',
+            intdiv($fileId, 1000),
+            $fileId % 1000,
+            rawurlencode($fileName),
+        );
+    }
+
+    /**
+     * Identify files by their CurseForge fingerprint (MurmurHash2 of the whitespace-stripped bytes).
+     *
+     * POST /fingerprints with body {"fingerprints": [ ...uint32... ]}.
+     * The response's data.exactMatches[] each contain `id` (the project/mod id) and
+     * a `file` object with `id` (the file/version id) and `fileFingerprint`.
+     *
+     * @param  int[]  $fingerprints
+     * @return array<int, array<string, mixed>>  The exactMatches array (empty when nothing matches)
+     *
+     * @throws RuntimeException When the API key is rejected
+     */
+    public function lookupByFingerprints(array $fingerprints): array
+    {
+        $fingerprints = array_values(array_unique(array_filter($fingerprints, fn ($fp) => $fp !== null)));
+
+        if (!$this->isConfigured() || empty($fingerprints)) {
+            return [];
+        }
+
+        $response = $this->client()->post('/fingerprints', [
+            'fingerprints' => $fingerprints,
+        ]);
+
+        $this->ensureAuthorized($response);
+
+        if ($response->failed()) {
+            return [];
+        }
+
+        return $response->json()['data']['exactMatches'] ?? [];
+    }
+
+    /**
+     * Compute the CurseForge fingerprint of a file's raw bytes.
+     *
+     * CurseForge fingerprints are a 32-bit MurmurHash2 (seed = 1) computed over the file
+     * bytes with all whitespace bytes removed first: tab (0x09), line-feed (0x0A),
+     * carriage-return (0x0D) and space (0x20). Note the length fed to the hash is the
+     * length AFTER stripping, which is what MurmurHash2 seeds with (h = seed ^ len).
+     */
+    public static function fingerprint(string $bytes): int
+    {
+        $stripped = str_replace(["\x09", "\x0a", "\x0d", "\x20"], '', $bytes);
+
+        return self::murmur2($stripped, 1);
+    }
+
+    /**
+     * MurmurHash2 (32-bit, original Austin Appleby variant) implemented with explicit
+     * 32-bit-unsigned arithmetic so it behaves identically to the C reference regardless
+     * of PHP's native (signed, 64-bit) integers.
+     *
+     * Reference:
+     *   uint32_t h = seed ^ len;
+     *   while (len >= 4) { k = read_u32_le(); k*=m; k^=k>>r; k*=m; h*=m; h^=k; }
+     *   switch (len) { tail bytes ... h*=m; }
+     *   h ^= h>>13; h*=m; h ^= h>>15;
+     * with m = 0x5bd1e995, r = 24.
+     */
+    private static function murmur2(string $data, int $seed): int
+    {
+        $m = 0x5bd1e995;
+        $r = 24;
+
+        $len = strlen($data);
+        $h = ($seed ^ $len) & 0xFFFFFFFF;
+
+        $i = 0;
+        while ($len >= 4) {
+            $k = ord($data[$i])
+                | (ord($data[$i + 1]) << 8)
+                | (ord($data[$i + 2]) << 16)
+                | (ord($data[$i + 3]) << 24);
+            $k &= 0xFFFFFFFF;
+
+            $k = self::mul32($k, $m);
+            $k ^= ($k >> $r) & 0xFFFFFFFF;
+            $k &= 0xFFFFFFFF;
+            $k = self::mul32($k, $m);
+
+            $h = self::mul32($h, $m);
+            $h = ($h ^ $k) & 0xFFFFFFFF;
+
+            $i += 4;
+            $len -= 4;
+        }
+
+        switch ($len) {
+            case 3:
+                $h = ($h ^ (ord($data[$i + 2]) << 16)) & 0xFFFFFFFF;
+                // no break — fall through
+            case 2:
+                $h = ($h ^ (ord($data[$i + 1]) << 8)) & 0xFFFFFFFF;
+                // no break — fall through
+            case 1:
+                $h = ($h ^ ord($data[$i])) & 0xFFFFFFFF;
+                $h = self::mul32($h, $m);
+        }
+
+        $h = ($h ^ ($h >> 13)) & 0xFFFFFFFF;
+        $h = self::mul32($h, $m);
+        $h = ($h ^ ($h >> 15)) & 0xFFFFFFFF;
+
+        return $h;
+    }
+
+    /**
+     * Multiply two 32-bit unsigned integers and truncate the product back to 32 bits,
+     * split into 16-bit halves so the intermediate product never exceeds PHP_INT_MAX
+     * on any platform.
+     */
+    private static function mul32(int $a, int $b): int
+    {
+        $a &= 0xFFFFFFFF;
+        $b &= 0xFFFFFFFF;
+
+        $al = $a & 0xFFFF;
+        $ah = ($a >> 16) & 0xFFFF;
+
+        $high = ((($ah * $b) & 0xFFFF) << 16) & 0xFFFFFFFF;
+        $low = ($al * $b) & 0xFFFFFFFF;
+
+        return ($high + $low) & 0xFFFFFFFF;
+    }
+
+    /**
+     * Get the full file (version) object for a specific file, or null on failure.
+     *
+     * Useful fields: `serverPackFileId` (int|null — the id of the prebuilt server pack, when
+     * the pack ships one), `gameVersions` (e.g. ["1.20.1", "Forge", "Server"]), `downloadUrl`.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function getFile(int $modId, int $fileId): ?array
+    {
+        if (!$this->isConfigured()) {
+            return null;
+        }
+
+        $response = $this->client()->get("/mods/{$modId}/files/{$fileId}");
+
+        if ($response->failed()) {
+            return null;
+        }
+
+        return $response->json()['data'] ?? null;
     }
 
     /**
@@ -189,12 +429,18 @@ class CurseForgeService
             return null;
         }
 
-        $downloadUrl = $response->json()['data']['downloadUrl'] ?? null;
+        $data        = $response->json()['data'] ?? [];
+        $downloadUrl = $data['downloadUrl'] ?? null;
+
+        if ($downloadUrl === null) {
+            // Author disabled API distribution — recover via the keyless redirect endpoint.
+            return !empty($data['id'])
+                ? $this->nullDownloadFallback($modId, (int) $data['id'], (string) ($data['fileName'] ?? ''))
+                : null;
+        }
 
         // edge.forgecdn.net redirects; mediafilez.forgecdn.net serves files directly.
-        return $downloadUrl === null
-            ? null
-            : str_replace('edge.forgecdn.net', 'mediafilez.forgecdn.net', $downloadUrl);
+        return str_replace('edge.forgecdn.net', 'mediafilez.forgecdn.net', $downloadUrl);
     }
 
     protected function client(): PendingRequest

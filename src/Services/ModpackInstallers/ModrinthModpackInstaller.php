@@ -5,6 +5,7 @@ namespace JoanFo\Resources\Services\ModpackInstallers;
 use App\Repositories\Daemon\DaemonFileRepository;
 use Exception;
 use Illuminate\Support\Facades\Http;
+use JoanFo\Resources\Models\InstalledResource;
 use JoanFo\Resources\Services\ModrinthService;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -34,12 +35,14 @@ class ModrinthModpackInstaller
         throw new Exception('No .mrpack file found in modpack version');
     }
 
-    public function installByVersionId(DaemonFileRepository $fileRepo, string $versionId, bool $deleteFiles): void
+    /** Returns the detected modloader name (fabric|forge|neoforge|quilt|vanilla). */
+    public function installByVersionId(DaemonFileRepository $fileRepo, string $versionId, bool $deleteFiles, int $serverId = 0): string
     {
-        $this->install($fileRepo, $this->getDownloadUrl($versionId), $deleteFiles);
+        return $this->install($fileRepo, $this->getDownloadUrl($versionId), $deleteFiles, $serverId);
     }
 
-    public function install(DaemonFileRepository $fileRepo, string $url, bool $deleteFiles): void
+    /** Returns the detected modloader name (fabric|forge|neoforge|quilt|vanilla). */
+    public function install(DaemonFileRepository $fileRepo, string $url, bool $deleteFiles, int $serverId = 0): string
     {
         if ($deleteFiles) {
             $this->deleteAllServerFiles($fileRepo);
@@ -92,14 +95,21 @@ class ModrinthModpackInstaller
 
         if (isset($deps['fabric-loader']) && $minecraftVersion) {
             $this->downloadFabricServer($fileRepo, $minecraftVersion, $deps['fabric-loader']);
+            $modloader = 'fabric';
         } elseif (isset($deps['quilt-loader']) && $minecraftVersion) {
             $this->downloadQuiltServer($fileRepo, $minecraftVersion, $deps['quilt-loader']);
+            $modloader = 'quilt';
         } elseif (isset($deps['neoforge']) && $minecraftVersion) {
             $this->downloadNeoForgeInstaller($fileRepo, $deps['neoforge']);
+            $modloader = 'neoforge';
         } elseif (isset($deps['forge']) && $minecraftVersion) {
             $this->downloadForgeInstaller($fileRepo, $minecraftVersion, $deps['forge']);
+            $modloader = 'forge';
         } elseif ($minecraftVersion) {
             $this->downloadVanillaServer($fileRepo, $minecraftVersion);
+            $modloader = 'vanilla';
+        } else {
+            $modloader = 'vanilla';
         }
 
         foreach ($manifest['files'] ?? [] as $file) {
@@ -108,10 +118,29 @@ class ModrinthModpackInstaller
 
             if ($downloadUrl && $filePath) {
                 try {
-                    $fileRepo->pull($downloadUrl, '/' . dirname($filePath), [
-                        'filename' => basename($filePath),
+                    $directory = '/' . trim(dirname($filePath), '/');
+                    $filename = basename($filePath);
+
+                    $fileRepo->pull($downloadUrl, $directory, [
+                        'filename' => $filename,
                         'foreground' => false,
                     ]);
+
+                    if ($serverId && $filename) {
+                        // Parse project_id and version_id from the Modrinth CDN URL:
+                        // /data/{projectId}/versions/{versionId}/{filename}
+                        $segments = array_values(array_filter(explode('/', parse_url($downloadUrl, PHP_URL_PATH) ?? '')));
+                        $isModrinthCdn = (count($segments) >= 5 && ($segments[0] ?? '') === 'data' && ($segments[2] ?? '') === 'versions');
+                        $projectId = $isModrinthCdn ? $segments[1] : null;
+                        $versionId = $isModrinthCdn ? $segments[3] : null;
+
+                        if ($projectId) {
+                            InstalledResource::updateOrCreate(
+                                ['server_id' => $serverId, 'directory' => $directory, 'filename' => $filename],
+                                ['source' => 'modrinth', 'project_id' => $projectId, 'version_id' => $versionId, 'name' => pathinfo($filename, PATHINFO_FILENAME)],
+                            );
+                        }
+                    }
                 } catch (Exception $e) {
                     // A single failed file should not abort the whole installation.
                     report($e);
@@ -120,6 +149,8 @@ class ModrinthModpackInstaller
         }
 
         $this->deleteLocalDirectory($tempDir);
+
+        return $modloader;
     }
 
     private function deleteAllServerFiles(DaemonFileRepository $fileRepo): void
