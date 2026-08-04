@@ -369,6 +369,7 @@ class ResourcesPage extends Page implements HasTable
                         $this->projectType = $data['projectType'] ?? 'all';
 
                         Record::clearCache($this->searchQuery ?? '', $oldType, $oldSource);
+                        Record::clearCache($this->searchQuery ?? '', $this->projectType, $this->source);
 
                         $this->cachedTotalCount = null;
                         $this->tablePage        = 1;
@@ -1434,6 +1435,7 @@ class ResourcesPage extends Page implements HasTable
                 'type'           => $project['type'],
                 'loader'         => $project['loader'] ?? null,
                 'loader_detected' => true,
+                'type_detected'  => true,
                 'source'         => $project['source'],
                 'search_query'   => $this->searchQuery ?? '',
                 'project_type'   => $this->projectType,
@@ -1516,7 +1518,11 @@ class ResourcesPage extends Page implements HasTable
                 'author'      => $hit['author'] ?? 'Unknown',
                 'icon'        => $hit['icon_url'] ?? null,
                 'downloads'   => $hit['downloads'] ?? 0,
-                'type'        => $hit['project_type'] ?? 'mod',
+                // The active filter is authoritative. Some Modrinth search responses
+                // omit project_type, which otherwise makes plugin results appear as mods.
+                'type'        => $this->projectType !== 'all'
+                    ? $this->projectType
+                    : ($hit['project_type'] ?? 'mod'),
                 'loader'      => $loader,
                 'source'      => 'modrinth',
             ];
@@ -1587,7 +1593,9 @@ class ResourcesPage extends Page implements HasTable
                 'author'      => $mod['authors'][0]['name'] ?? 'Unknown',
                 'icon'        => $mod['logo']['thumbnailUrl'] ?? null,
                 'downloads'   => $mod['downloadCount'] ?? 0,
-                'type'        => ($mod['classId'] ?? null) === CurseForgeService::CLASS_BUKKIT_PLUGINS ? 'plugin' : 'mod',
+                'type'        => $this->projectType !== 'all'
+                    ? $this->projectType
+                    : (($mod['classId'] ?? null) === CurseForgeService::CLASS_BUKKIT_PLUGINS ? 'plugin' : 'mod'),
                 'loader'      => $loader,
                 'source'      => $source,
             ];
