@@ -361,6 +361,11 @@ class ResourcesPage extends Page implements HasTable
                             ->options(fn () => $this->getEnabledPlatforms())
                             ->required()
                             ->live()
+                            ->afterStateUpdated(function (?string $state, $set): void {
+                                if ($this->sourceSupportsPluginsOnly($state) && is_callable($set)) {
+                                    $set('projectType', 'plugin');
+                                }
+                            })
                             ->native(false),
                         Select::make('projectType')
                             ->label(trans('resources::resources.filters.type'))
@@ -388,7 +393,6 @@ class ResourcesPage extends Page implements HasTable
                             : ($data['projectType'] ?? 'all');
 
                         Record::clearCache($this->searchQuery ?? '', $oldType, $oldSource);
-                        Record::clearCache($this->searchQuery ?? '', $this->projectType, $this->source);
 
                         $this->cachedTotalCount = null;
                         $this->tablePage        = 1;
