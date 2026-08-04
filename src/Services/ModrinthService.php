@@ -31,7 +31,7 @@ class ModrinthService
      */
     public function search(string $query = '', array $facets = [], int $limit = 20, int $offset = 0): array
     {
-        $cacheKey = 'modrinth_search_v2_'.md5($query.json_encode($facets).$limit.$offset);
+        $cacheKey = 'modrinth_search_'.md5($query.json_encode($facets).$limit.$offset);
 
         if ($this->cacheEnabled && Cache::has($cacheKey)) {
             return Cache::get($cacheKey);
