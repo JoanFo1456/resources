@@ -10,6 +10,8 @@ use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Tables\Columns\ImageColumn;
@@ -343,21 +345,28 @@ class ResourcesPage extends Page implements HasTable
                     ->color('gray')
                     ->fillForm(fn () => [
                         'source'      => $this->source,
-                        'projectType' => $this->projectType,
+                        'projectType' => $this->sourceSupportsPluginsOnly() ? 'plugin' : $this->projectType,
                     ])
                     ->schema([
                         Select::make('source')
                             ->label(trans('resources::resources.filters.platform'))
                             ->options(fn () => $this->getEnabledPlatforms())
                             ->required()
+                            ->live()
                             ->native(false),
                         Select::make('projectType')
                             ->label(trans('resources::resources.filters.type'))
-                            ->options([
-                                'all'    => trans('resources::resources.filters.type_all'),
-                                'mod'    => trans('resources::resources.filters.type_mod'),
-                                'plugin' => trans('resources::resources.filters.type_plugin'),
-                            ])
+                            ->options(function ($get): array {
+                                $source = is_callable($get) ? $get('source') : $this->source;
+
+                                return $this->sourceSupportsPluginsOnly($source)
+                                    ? ['plugin' => trans('resources::resources.filters.type_plugin')]
+                                    : [
+                                        'all'    => trans('resources::resources.filters.type_all'),
+                                        'mod'    => trans('resources::resources.filters.type_mod'),
+                                        'plugin' => trans('resources::resources.filters.type_plugin'),
+                                    ];
+                            })
                             ->required()
                             ->native(false),
                     ])
@@ -366,9 +375,12 @@ class ResourcesPage extends Page implements HasTable
                         $oldType   = $this->projectType;
 
                         $this->source      = $data['source'];
-                        $this->projectType = $data['projectType'] ?? 'all';
+                        $this->projectType = $this->sourceSupportsPluginsOnly($this->source)
+                            ? 'plugin'
+                            : ($data['projectType'] ?? 'all');
 
                         Record::clearCache($this->searchQuery ?? '', $oldType, $oldSource);
+                        Record::clearCache($this->searchQuery ?? '', $this->projectType, $this->source);
 
                         $this->cachedTotalCount = null;
                         $this->tablePage        = 1;
@@ -1383,6 +1395,11 @@ class ResourcesPage extends Page implements HasTable
         return $enabled;
     }
 
+    private function sourceSupportsPluginsOnly(?string $source = null): bool
+    {
+        return in_array($source ?? $this->source, ['bukkit', 'spigot', 'bukkit-spigot'], true);
+    }
+
     protected function getTotalRecordCount(): int
     {
         if ($this->cachedTotalCount !== null) {
@@ -1434,6 +1451,7 @@ class ResourcesPage extends Page implements HasTable
                 'type'           => $project['type'],
                 'loader'         => $project['loader'] ?? null,
                 'loader_detected' => true,
+                'type_detected'  => 2,
                 'source'         => $project['source'],
                 'search_query'   => $this->searchQuery ?? '',
                 'project_type'   => $this->projectType,
@@ -1474,9 +1492,23 @@ class ResourcesPage extends Page implements HasTable
      */
     protected function getModrinthFacets(): array
     {
+        if ($this->projectType === 'plugin') {
+            return [
+                'project_type' => 'plugin',
+            ];
+        }
+
         return [
-            'project_type' => $this->projectType === 'all' ? ['mod', 'plugin'] : $this->projectType,
+            'project_type' => 'mod',
         ];
+    }
+
+    private function isModrinthPlugin(array $project): bool
+    {
+        return !empty(array_intersect(
+            ['bukkit', 'spigot', 'paper', 'folia', 'purpur', 'velocity', 'waterfall', 'sponge'],
+            array_map('strtolower', $project['categories'] ?? [])
+        ));
     }
 
     protected function getCurseForgeClassId(): ?int
@@ -1490,16 +1522,39 @@ class ResourcesPage extends Page implements HasTable
 
     protected function fetchModrinthProjects(int $page): Collection
     {
+        $limit = self::API_PAGE_SIZE;
+        $offset = ($page - 1) * $limit;
+        $pluginIds = [];
         $results = $this->modrinthService->search(
             $this->searchQuery ?? '',
             $this->getModrinthFacets(),
-            self::API_PAGE_SIZE,
-            ($page - 1) * self::API_PAGE_SIZE,
+            $limit,
+            $offset,
         );
+
+        if ($this->projectType === 'all') {
+            $pluginResults = $this->modrinthService->search(
+                $this->searchQuery ?? '',
+                [
+                    'project_type' => 'plugin',
+                ],
+                $limit,
+                $offset,
+            );
+
+            $results['hits'] = collect(array_merge(
+                $results['hits'] ?? [],
+                $pluginResults['hits'] ?? [],
+            ))->unique('project_id')->values()->all();
+            $pluginIds = collect($pluginResults['hits'] ?? [])
+                ->pluck('project_id')
+                ->map(fn ($id) => (string) $id)
+                ->all();
+        }
 
         $knownLoaders = ['neoforge', 'fabric', 'forge', 'quilt', 'liteloader'];
 
-        return collect($results['hits'] ?? [])->map(function ($hit) use ($knownLoaders) {
+        return collect($results['hits'] ?? [])->map(function ($hit) use ($knownLoaders, $pluginIds) {
             $cats  = array_map('strtolower', $hit['categories'] ?? []);
             $found = array_values(array_filter($knownLoaders, fn ($l) => in_array($l, $cats)));
             $loader = match (count($found)) {
@@ -1516,7 +1571,11 @@ class ResourcesPage extends Page implements HasTable
                 'author'      => $hit['author'] ?? 'Unknown',
                 'icon'        => $hit['icon_url'] ?? null,
                 'downloads'   => $hit['downloads'] ?? 0,
-                'type'        => $hit['project_type'] ?? 'mod',
+                'type'        => $this->projectType !== 'all'
+                    ? $this->projectType
+                    : (in_array((string) $hit['project_id'], $pluginIds, true) || $this->isModrinthPlugin($hit)
+                        ? 'plugin'
+                        : 'mod'),
                 'loader'      => $loader,
                 'source'      => 'modrinth',
             ];
@@ -1587,7 +1646,9 @@ class ResourcesPage extends Page implements HasTable
                 'author'      => $mod['authors'][0]['name'] ?? 'Unknown',
                 'icon'        => $mod['logo']['thumbnailUrl'] ?? null,
                 'downloads'   => $mod['downloadCount'] ?? 0,
-                'type'        => ($mod['classId'] ?? null) === CurseForgeService::CLASS_BUKKIT_PLUGINS ? 'plugin' : 'mod',
+                'type'        => $this->projectType !== 'all'
+                    ? $this->projectType
+                    : (($mod['classId'] ?? null) === CurseForgeService::CLASS_BUKKIT_PLUGINS ? 'plugin' : 'mod'),
                 'loader'      => $loader,
                 'source'      => $source,
             ];
