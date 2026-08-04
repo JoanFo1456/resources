@@ -1435,7 +1435,7 @@ class ResourcesPage extends Page implements HasTable
                 'type'           => $project['type'],
                 'loader'         => $project['loader'] ?? null,
                 'loader_detected' => true,
-                'type_detected'  => true,
+                'type_detected'  => 2,
                 'source'         => $project['source'],
                 'search_query'   => $this->searchQuery ?? '',
                 'project_type'   => $this->projectType,
@@ -1476,9 +1476,23 @@ class ResourcesPage extends Page implements HasTable
      */
     protected function getModrinthFacets(): array
     {
+        if ($this->projectType === 'plugin') {
+            return [
+                'project_type' => 'plugin',
+            ];
+        }
+
         return [
-            'project_type' => $this->projectType === 'all' ? ['mod', 'plugin'] : $this->projectType,
+            'project_type' => 'mod',
         ];
+    }
+
+    private function isModrinthPlugin(array $project): bool
+    {
+        return !empty(array_intersect(
+            ['bukkit', 'spigot', 'paper', 'folia', 'purpur', 'velocity', 'waterfall', 'sponge'],
+            array_map('strtolower', $project['categories'] ?? [])
+        ));
     }
 
     protected function getCurseForgeClassId(): ?int
@@ -1492,16 +1506,39 @@ class ResourcesPage extends Page implements HasTable
 
     protected function fetchModrinthProjects(int $page): Collection
     {
+        $limit = self::API_PAGE_SIZE;
+        $offset = ($page - 1) * $limit;
+        $pluginIds = [];
         $results = $this->modrinthService->search(
             $this->searchQuery ?? '',
             $this->getModrinthFacets(),
-            self::API_PAGE_SIZE,
-            ($page - 1) * self::API_PAGE_SIZE,
+            $limit,
+            $offset,
         );
+
+        if ($this->projectType === 'all') {
+            $pluginResults = $this->modrinthService->search(
+                $this->searchQuery ?? '',
+                [
+                    'project_type' => 'plugin',
+                ],
+                $limit,
+                $offset,
+            );
+
+            $results['hits'] = collect(array_merge(
+                $results['hits'] ?? [],
+                $pluginResults['hits'] ?? [],
+            ))->unique('project_id')->values()->all();
+            $pluginIds = collect($pluginResults['hits'] ?? [])
+                ->pluck('project_id')
+                ->map(fn ($id) => (string) $id)
+                ->all();
+        }
 
         $knownLoaders = ['neoforge', 'fabric', 'forge', 'quilt', 'liteloader'];
 
-        return collect($results['hits'] ?? [])->map(function ($hit) use ($knownLoaders) {
+        return collect($results['hits'] ?? [])->map(function ($hit) use ($knownLoaders, $pluginIds) {
             $cats  = array_map('strtolower', $hit['categories'] ?? []);
             $found = array_values(array_filter($knownLoaders, fn ($l) => in_array($l, $cats)));
             $loader = match (count($found)) {
@@ -1518,11 +1555,11 @@ class ResourcesPage extends Page implements HasTable
                 'author'      => $hit['author'] ?? 'Unknown',
                 'icon'        => $hit['icon_url'] ?? null,
                 'downloads'   => $hit['downloads'] ?? 0,
-                // The active filter is authoritative. Some Modrinth search responses
-                // omit project_type, which otherwise makes plugin results appear as mods.
                 'type'        => $this->projectType !== 'all'
                     ? $this->projectType
-                    : ($hit['project_type'] ?? 'mod'),
+                    : (in_array((string) $hit['project_id'], $pluginIds, true) || $this->isModrinthPlugin($hit)
+                        ? 'plugin'
+                        : 'mod'),
                 'loader'      => $loader,
                 'source'      => 'modrinth',
             ];
