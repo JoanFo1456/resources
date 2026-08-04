@@ -10,6 +10,8 @@ use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Tables\Columns\ImageColumn;
@@ -343,17 +345,25 @@ class ResourcesPage extends Page implements HasTable
                     ->color('gray')
                     ->fillForm(fn () => [
                         'source'      => $this->source,
-                        'projectType' => $this->projectType,
+                        'projectType' => $this->sourceSupportsPluginsOnly() ? 'plugin' : $this->projectType,
                     ])
                     ->schema([
                         Select::make('source')
                             ->label(trans('resources::resources.filters.platform'))
                             ->options(fn () => $this->getEnabledPlatforms())
                             ->required()
+                            ->live()
+                            ->afterStateUpdated(function (Set $set, ?string $state): void {
+                                if ($this->sourceSupportsPluginsOnly($state)) {
+                                    $set('projectType', 'plugin');
+                                }
+                            })
                             ->native(false),
                         Select::make('projectType')
                             ->label(trans('resources::resources.filters.type'))
-                            ->options([
+                            ->options(fn (Get $get) => $this->sourceSupportsPluginsOnly($get('source'))
+                                ? ['plugin' => trans('resources::resources.filters.type_plugin')]
+                                : [
                                 'all'    => trans('resources::resources.filters.type_all'),
                                 'mod'    => trans('resources::resources.filters.type_mod'),
                                 'plugin' => trans('resources::resources.filters.type_plugin'),
@@ -366,7 +376,9 @@ class ResourcesPage extends Page implements HasTable
                         $oldType   = $this->projectType;
 
                         $this->source      = $data['source'];
-                        $this->projectType = $data['projectType'] ?? 'all';
+                        $this->projectType = $this->sourceSupportsPluginsOnly($this->source)
+                            ? 'plugin'
+                            : ($data['projectType'] ?? 'all');
 
                         Record::clearCache($this->searchQuery ?? '', $oldType, $oldSource);
                         Record::clearCache($this->searchQuery ?? '', $this->projectType, $this->source);
@@ -1382,6 +1394,11 @@ class ResourcesPage extends Page implements HasTable
         }
 
         return $enabled;
+    }
+
+    private function sourceSupportsPluginsOnly(?string $source = null): bool
+    {
+        return in_array($source ?? $this->source, ['bukkit', 'spigot', 'bukkit-spigot'], true);
     }
 
     protected function getTotalRecordCount(): int
