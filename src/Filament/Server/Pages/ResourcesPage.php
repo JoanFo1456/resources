@@ -353,21 +353,20 @@ class ResourcesPage extends Page implements HasTable
                             ->options(fn () => $this->getEnabledPlatforms())
                             ->required()
                             ->live()
-                            ->afterStateUpdated(function (Set $set, ?string $state): void {
-                                if ($this->sourceSupportsPluginsOnly($state)) {
-                                    $set('projectType', 'plugin');
-                                }
-                            })
                             ->native(false),
                         Select::make('projectType')
                             ->label(trans('resources::resources.filters.type'))
-                            ->options(fn (Get $get) => $this->sourceSupportsPluginsOnly($get('source'))
-                                ? ['plugin' => trans('resources::resources.filters.type_plugin')]
-                                : [
-                                'all'    => trans('resources::resources.filters.type_all'),
-                                'mod'    => trans('resources::resources.filters.type_mod'),
-                                'plugin' => trans('resources::resources.filters.type_plugin'),
-                            ])
+                            ->options(function ($get): array {
+                                $source = is_callable($get) ? $get('source') : $this->source;
+
+                                return $this->sourceSupportsPluginsOnly($source)
+                                    ? ['plugin' => trans('resources::resources.filters.type_plugin')]
+                                    : [
+                                        'all'    => trans('resources::resources.filters.type_all'),
+                                        'mod'    => trans('resources::resources.filters.type_mod'),
+                                        'plugin' => trans('resources::resources.filters.type_plugin'),
+                                    ];
+                            })
                             ->required()
                             ->native(false),
                     ])
