@@ -118,6 +118,10 @@ class ResourcesPage extends Page implements HasTable
         } elseif (in_array('mods', $features)) {
             $this->projectType = 'mod';
         }
+
+        if ($this->sourceSupportsPluginsOnly()) {
+            $this->projectType = 'plugin';
+        }
     }
 
     public function getTitle(): string
@@ -142,6 +146,10 @@ class ResourcesPage extends Page implements HasTable
 
     public function updatedSource(): void
     {
+        if ($this->sourceSupportsPluginsOnly()) {
+            $this->projectType = 'plugin';
+        }
+
         $this->cachedTotalCount = null;
         $this->resetTable();
     }
@@ -151,7 +159,7 @@ class ResourcesPage extends Page implements HasTable
         $this->cachedTotalCount = null;
         $this->resetTable();
     }
-
+    
     public function updatedSearchQuery(): void
     {
         $this->cachedTotalCount = null;
@@ -1401,6 +1409,19 @@ class ResourcesPage extends Page implements HasTable
         $searchQuery = $this->searchQuery ?? '';
 
         try {
+            if ($this->projectType === 'all') {
+                return match ($source) {
+                    'modrinth' => $this->modrinthService->getTotalCount($searchQuery, [
+                        'project_type' => ['mod', 'plugin'],
+                    ]),
+                    'curseforge' => $this->curseForgeService->getTotalCount($searchQuery, CurseForgeService::CLASS_MODS)
+                        + $this->curseForgeService->getTotalCount($searchQuery, CurseForgeService::CLASS_BUKKIT_PLUGINS),
+                    'bukkit' => $this->curseForgeService->getTotalCount($searchQuery, CurseForgeService::CLASS_BUKKIT_PLUGINS),
+                    'spigot' => $this->spigotService->getTotalCount($searchQuery),
+                    default => 0,
+                };
+            }
+
             return match ($source) {
                 'modrinth' => $this->modrinthService->getTotalCount($searchQuery, $this->getModrinthFacets()),
                 'curseforge' => $this->curseForgeService->getTotalCount($searchQuery, $this->getCurseForgeClassId()),
@@ -1438,7 +1459,7 @@ class ResourcesPage extends Page implements HasTable
                 'search_query'   => $this->searchQuery ?? '',
                 'project_type'   => $this->projectType,
                 'api_page'       => $page,
-                'api_index'      => ($page - 1) * self::API_PAGE_SIZE + $index,
+                'api_index'      => $project['api_index'] ?? (($page - 1) * self::API_PAGE_SIZE + $index),
             ];
         }
 
@@ -1448,16 +1469,36 @@ class ResourcesPage extends Page implements HasTable
     protected function fetchProjects(int $page): Collection
     {
         $sources = explode('-', $this->source);
+        $offset = ($page - 1) * self::API_PAGE_SIZE;
 
         return collect($sources)
             ->flatMap(fn (string $source) => $this->fetchFromSingleSource($source, $page))
             ->unique(fn ($project) => $project['id'].'-'.$project['source'])
             ->sortByDesc('downloads')
-            ->values();
+            ->slice(0, self::API_PAGE_SIZE)
+            ->values()
+            ->map(function (array $project, int $index) use ($offset): array {
+                $project['api_index'] = $offset + $index;
+
+                return $project;
+            });
     }
 
     protected function fetchFromSingleSource(string $source, int $page): Collection
     {
+        if ($this->projectType === 'all') {
+            return match ($source) {
+                'modrinth' => $this->fetchModrinthProjects($page),
+                'curseforge' => collect([
+                    ...$this->fetchCurseForgeProjects($page, CurseForgeService::CLASS_MODS, 'curseforge'),
+                    ...$this->fetchCurseForgeProjects($page, CurseForgeService::CLASS_BUKKIT_PLUGINS, 'curseforge'),
+                ]),
+                'bukkit' => $this->fetchCurseForgeProjects($page, CurseForgeService::CLASS_BUKKIT_PLUGINS, 'bukkit'),
+                'spigot' => $this->fetchSpigotProjects($page),
+                default => collect(),
+            };
+        }
+
         return match ($source) {
             'modrinth' => $this->fetchModrinthProjects($page),
             'curseforge' => $this->fetchCurseForgeProjects($page, $this->getCurseForgeClassId(), 'curseforge'),
