@@ -35,6 +35,7 @@ class Record extends JsonCachedModel
         'type'           => 'string',
         'loader'         => 'string',
         'loader_detected' => 'boolean',
+        'type_detected'  => 'integer',
         'source'         => 'string',
         'search_query'   => 'string',
         'project_type'   => 'string',
@@ -60,6 +61,7 @@ class Record extends JsonCachedModel
                 && in_array($record['source'] ?? '', $sources, true)
                 && ($record['api_page'] ?? 0) === $page
                 && !empty($record['loader_detected'])
+                && (int) ($record['type_detected'] ?? 0) === 2
             ) {
                 return true;
             }
