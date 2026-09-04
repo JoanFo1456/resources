@@ -22,12 +22,12 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Pagination\Paginator as PaginatorContract;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use JoanFo\Resources\Jobs\IdentifyInstalledResourcesJob;
 use JoanFo\Resources\Models\InstalledFile;
@@ -62,6 +62,11 @@ class ResourcesPage extends Page implements HasTable
     /** 'remote' browses the upstream APIs; 'installed' lists files from the server. */
     public string $mode = 'remote';
 
+    /** Installed-list filters: 'all'|'mod'|'plugin' and 'all'|modrinth|curseforge|bukkit|spigot|manual. */
+    public string $installedType = 'all';
+
+    public string $installedSource = 'all';
+
     public bool $viewAsGrid = false;
 
     private ?int $cachedTotalCount = null;
@@ -69,7 +74,6 @@ class ResourcesPage extends Page implements HasTable
     private ?array $cachedInstalledFiles = null;
 
     private ?array $cachedUpdatableFiles = null;
-
 
     protected ModrinthService $modrinthService;
 
@@ -95,6 +99,9 @@ class ResourcesPage extends Page implements HasTable
     {
         $server = Filament::getTenant();
 
+        if (!$server) {
+            return false;
+        }
 
         $server->loadMissing('egg');
 
@@ -259,12 +266,12 @@ class ResourcesPage extends Page implements HasTable
                     ->label('Loader')
                     ->badge()
                     ->color(fn ($state) => match ($state) {
-                        'fabric'     => 'success',
-                        'neoforge'   => 'info',
-                        'forge'      => 'warning',
-                        'quilt'      => 'primary',
-                        'multi'      => 'gray',
-                        default      => 'gray',
+                        'fabric' => 'success',
+                        'neoforge' => 'info',
+                        'forge' => 'warning',
+                        'quilt' => 'primary',
+                        'multi' => 'gray',
+                        default => 'gray',
                     })
                     ->formatStateUsing(fn ($state) => $state === 'multi' ? 'Multi-Loader' : ucfirst((string) $state))
                     ->placeholder('—'),
@@ -282,11 +289,11 @@ class ResourcesPage extends Page implements HasTable
                         default => 'gray',
                     })
                     ->icon(fn ($state) => match ($state) {
-                        'modrinth'   => 'tabler-leaf',
+                        'modrinth' => 'tabler-leaf',
                         'curseforge' => 'tabler-flame',
-                        'spigot'     => 'tabler-bolt',
-                        'bukkit'     => 'tabler-bucket',
-                        default      => 'tabler-package',
+                        'spigot' => 'tabler-bolt',
+                        'bukkit' => 'tabler-bucket',
+                        default => 'tabler-package',
                     })
                     ->formatStateUsing(fn ($state) => ucfirst($state)),
             ])
@@ -301,7 +308,7 @@ class ResourcesPage extends Page implements HasTable
                     ->icon('tabler-eye')
                     ->color('gray')
                     ->modalContent(fn (Record $record) => view('resources::filament.modals.project-preview', [
-                        'record'  => $record,
+                        'record' => $record,
                         'details' => $this->fetchProjectPreview($record),
                     ]))
                     ->schema(fn (Record $record) => [
@@ -352,7 +359,7 @@ class ResourcesPage extends Page implements HasTable
                     ->icon('tabler-filter')
                     ->color('gray')
                     ->fillForm(fn () => [
-                        'source'      => $this->source,
+                        'source' => $this->source,
                         'projectType' => $this->sourceSupportsPluginsOnly() ? 'plugin' : $this->projectType,
                     ])
                     ->schema([
@@ -375,8 +382,8 @@ class ResourcesPage extends Page implements HasTable
                                 return $this->sourceSupportsPluginsOnly($source)
                                     ? ['plugin' => trans('resources::resources.filters.type_plugin')]
                                     : [
-                                        'all'    => trans('resources::resources.filters.type_all'),
-                                        'mod'    => trans('resources::resources.filters.type_mod'),
+                                        'all' => trans('resources::resources.filters.type_all'),
+                                        'mod' => trans('resources::resources.filters.type_mod'),
                                         'plugin' => trans('resources::resources.filters.type_plugin'),
                                     ];
                             })
@@ -385,9 +392,9 @@ class ResourcesPage extends Page implements HasTable
                     ])
                     ->action(function (array $data): void {
                         $oldSource = $this->source;
-                        $oldType   = $this->projectType;
+                        $oldType = $this->projectType;
 
-                        $this->source      = $data['source'];
+                        $this->source = $data['source'];
                         $this->projectType = $this->sourceSupportsPluginsOnly($this->source)
                             ? 'plugin'
                             : ($data['projectType'] ?? 'all');
@@ -395,7 +402,7 @@ class ResourcesPage extends Page implements HasTable
                         Record::clearCache($this->searchQuery ?? '', $oldType, $oldSource);
 
                         $this->cachedTotalCount = null;
-                        $this->tablePage        = 1;
+                        $this->tablePage = 1;
                         $this->flushCachedTableRecords();
                         $this->dispatch('$refresh');
                     })
@@ -445,12 +452,12 @@ class ResourcesPage extends Page implements HasTable
                                 ->label('')
                                 ->badge()
                                 ->color(fn ($state) => match ($state) {
-                                    'fabric'   => 'success',
+                                    'fabric' => 'success',
                                     'neoforge' => 'info',
-                                    'forge'    => 'warning',
-                                    'quilt'    => 'primary',
-                                    'multi'    => 'gray',
-                                    default    => 'gray',
+                                    'forge' => 'warning',
+                                    'quilt' => 'primary',
+                                    'multi' => 'gray',
+                                    default => 'gray',
                                 })
                                 ->formatStateUsing(fn ($state) => $state === 'multi' ? 'Multi-Loader' : ucfirst((string) $state))
                                 ->hidden(fn ($state) => empty($state)),
@@ -463,11 +470,11 @@ class ResourcesPage extends Page implements HasTable
                                     default => 'gray',
                                 })
                                 ->icon(fn ($state) => match ($state) {
-                                    'modrinth'   => 'tabler-leaf',
+                                    'modrinth' => 'tabler-leaf',
                                     'curseforge' => 'tabler-flame',
-                                    'spigot'     => 'tabler-bolt',
-                                    'bukkit'     => 'tabler-bucket',
-                                    default      => 'tabler-package',
+                                    'spigot' => 'tabler-bolt',
+                                    'bukkit' => 'tabler-bucket',
+                                    default => 'tabler-package',
                                 })
                                 ->formatStateUsing(fn ($state) => ucfirst($state))
                                 ->alignEnd(),
@@ -485,12 +492,26 @@ class ResourcesPage extends Page implements HasTable
         $table = $table
             ->records(function () {
                 $search = strtolower($this->getTableSearch() ?? '');
-                $files  = $this->getInstalledFiles();
+                $files = $this->getInstalledFiles();
 
                 if ($search !== '') {
                     $files = array_values(array_filter(
                         $files,
                         fn ($f) => str_contains(strtolower($f['name']), $search)
+                    ));
+                }
+
+                if ($this->installedType !== 'all') {
+                    $files = array_values(array_filter(
+                        $files,
+                        fn ($f) => ($f['type'] ?? '') === $this->installedType
+                    ));
+                }
+
+                if ($this->installedSource !== 'all') {
+                    $files = array_values(array_filter(
+                        $files,
+                        fn ($f) => ($f['source'] ?? 'manual') === $this->installedSource
                     ));
                 }
 
@@ -527,12 +548,12 @@ class ResourcesPage extends Page implements HasTable
                     ->label('Loader')
                     ->badge()
                     ->color(fn ($state) => match ($state) {
-                        'fabric'   => 'success',
+                        'fabric' => 'success',
                         'neoforge' => 'info',
-                        'forge'    => 'warning',
-                        'quilt'    => 'primary',
-                        'multi'    => 'gray',
-                        default    => 'gray',
+                        'forge' => 'warning',
+                        'quilt' => 'primary',
+                        'multi' => 'gray',
+                        default => 'gray',
                     })
                     ->formatStateUsing(fn ($state) => $state === 'multi' ? 'Multi-Loader' : ucfirst((string) $state))
                     ->placeholder('—'),
@@ -563,6 +584,7 @@ class ResourcesPage extends Page implements HasTable
                             ->afterStateUpdated(function ($state, $set) {
                                 if (!$state) {
                                     $set('changelog', '');
+
                                     return;
                                 }
                                 [$source, $projectId, $versionId] = explode(':', $state, 3);
@@ -600,10 +622,10 @@ class ResourcesPage extends Page implements HasTable
                             $newFilename = urldecode(basename(parse_url($url, PHP_URL_PATH) ?? ''));
                             if ($newFilename) {
                                 InstalledResourceCache::put($server->id, $record->directory, $newFilename, [
-                                    'source'     => $source,
+                                    'source' => $source,
                                     'project_id' => $projectId,
                                     'version_id' => $versionId,
-                                    'name'       => pathinfo($newFilename, PATHINFO_FILENAME),
+                                    'name' => pathinfo($newFilename, PATHINFO_FILENAME),
                                 ]);
                             }
 
@@ -661,6 +683,43 @@ class ResourcesPage extends Page implements HasTable
                     }),
             ])
             ->headerActions([
+                Action::make('filters')
+                    ->label(trans('resources::resources.filters.label'))
+                    ->icon('tabler-filter')
+                    ->color('gray')
+                    ->fillForm(fn () => [
+                        'installedType'   => $this->installedType,
+                        'installedSource' => $this->installedSource,
+                    ])
+                    ->schema([
+                        Select::make('installedType')
+                            ->label(trans('resources::resources.filters.type'))
+                            ->options([
+                                'all'    => trans('resources::resources.filters.type_all'),
+                                'mod'    => trans('resources::resources.filters.type_mod'),
+                                'plugin' => trans('resources::resources.filters.type_plugin'),
+                            ])
+                            ->required()
+                            ->native(false),
+                        Select::make('installedSource')
+                            ->label(trans('resources::resources.filters.platform'))
+                            ->options([
+                                'all'        => trans('resources::resources.filters.type_all'),
+                                'modrinth'   => 'Modrinth',
+                                'curseforge' => 'CurseForge',
+                                'bukkit'     => 'Bukkit',
+                                'spigot'     => 'Spigot',
+                                'manual'     => 'Manual',
+                            ])
+                            ->required()
+                            ->native(false),
+                    ])
+                    ->action(function (array $data): void {
+                        $this->installedType   = $data['installedType'] ?? 'all';
+                        $this->installedSource = $data['installedSource'] ?? 'all';
+                        $this->resetTable();
+                    })
+                    ->modalWidth('md'),
                 Action::make('update_all')
                     ->label(trans('resources::resources.installed.update_all'))
                     ->icon('tabler-refresh-alert')
@@ -680,19 +739,22 @@ class ResourcesPage extends Page implements HasTable
 
                                 if (!$meta || empty($meta['project_id'])) {
                                     $failed++;
+
                                     continue;
                                 }
 
-                                $versions  = $this->getVersions($meta['project_id'], $meta['source']);
+                                $versions = $this->getVersions($meta['project_id'], $meta['source']);
                                 $versionId = $versions[0]['id'] ?? null;
                                 if (!$versionId) {
                                     $failed++;
+
                                     continue;
                                 }
 
                                 $url = $this->getUrlBySource($meta['source'], $meta['project_id'], $versionId);
                                 if (!$url) {
                                     $failed++;
+
                                     continue;
                                 }
 
@@ -701,10 +763,10 @@ class ResourcesPage extends Page implements HasTable
                                 $newFilename = urldecode(basename(parse_url($url, PHP_URL_PATH) ?? ''));
                                 if ($newFilename) {
                                     InstalledResourceCache::put($serverId, $fileData['directory'], $newFilename, [
-                                        'source'     => $meta['source'],
+                                        'source' => $meta['source'],
                                         'project_id' => $meta['project_id'],
                                         'version_id' => $versionId,
-                                        'name'       => $meta['name'] ?? pathinfo($newFilename, PATHINFO_FILENAME),
+                                        'name' => $meta['name'] ?? pathinfo($newFilename, PATHINFO_FILENAME),
                                     ]);
                                 }
 
@@ -762,12 +824,12 @@ class ResourcesPage extends Page implements HasTable
                                         ->label('')
                                         ->badge()
                                         ->color(fn ($state) => match ($state) {
-                                            'fabric'   => 'success',
+                                            'fabric' => 'success',
                                             'neoforge' => 'info',
-                                            'forge'    => 'warning',
-                                            'quilt'    => 'primary',
-                                            'multi'    => 'gray',
-                                            default    => 'gray',
+                                            'forge' => 'warning',
+                                            'quilt' => 'primary',
+                                            'multi' => 'gray',
+                                            default => 'gray',
                                         })
                                         ->formatStateUsing(fn ($state) => $state === 'multi' ? 'Multi-Loader' : ucfirst((string) $state))
                                         ->hidden(fn ($state) => empty($state)),
@@ -877,17 +939,17 @@ class ResourcesPage extends Page implements HasTable
                     return [];
                 }
 
-                $cfBaseUrl = config('resources.curseforge_api_url');
-                $cfApiKey  = (string) config('resources.curseforge_api_key');
+                $cfBaseUrl = $this->curseForgeService->apiBaseUrl();
+                $cfHeaders = $this->curseForgeService->apiHeaders();
 
                 ['mod' => $modResponse, 'desc' => $descResponse] = Http::pool(fn ($pool) => [
                     $pool->as('mod')
-                        ->withHeader('x-api-key', $cfApiKey)
+                        ->withHeaders($cfHeaders)
                         ->acceptJson()
                         ->timeout(10)
                         ->get($cfBaseUrl . '/mods/' . $record->project_id),
                     $pool->as('desc')
-                        ->withHeader('x-api-key', $cfApiKey)
+                        ->withHeaders($cfHeaders)
                         ->acceptJson()
                         ->timeout(10)
                         ->get($cfBaseUrl . '/mods/' . $record->project_id . '/description'),
@@ -897,18 +959,18 @@ class ResourcesPage extends Page implements HasTable
                     $data = $modResponse->json()['data'] ?? [];
                     $classId = $data['classId'] ?? null;
                     $cfType = $classId === CurseForgeService::CLASS_BUKKIT_PLUGINS ? 'bukkit-plugins' : 'mc-mods';
-                    $data['_url']          = 'https://www.curseforge.com/minecraft/' . $cfType . '/' . ($data['slug'] ?? $record->project_id);
-                    $data['_source']       = 'curseforge';
+                    $data['_url'] = 'https://www.curseforge.com/minecraft/' . $cfType . '/' . ($data['slug'] ?? $record->project_id);
+                    $data['_source'] = 'curseforge';
                     $data['_body_is_html'] = true;
-                    $data['body']          = $descResponse->successful() ? ($descResponse->json()['data'] ?? null) : null;
+                    $data['body'] = $descResponse->successful() ? ($descResponse->json()['data'] ?? null) : null;
 
                     return $data;
                 }
             } elseif ($record->source === 'spigot') {
                 return [
-                    '_url'    => 'https://www.spigotmc.org/resources/' . $record->project_id,
+                    '_url' => 'https://www.spigotmc.org/resources/' . $record->project_id,
                     '_source' => 'spigot',
-                    'name'    => $record->name,
+                    'name' => $record->name,
                     'description' => $record->description,
                     'summary' => $record->description,
                 ];
@@ -917,7 +979,7 @@ class ResourcesPage extends Page implements HasTable
         }
 
         return [
-            '_url'    => null,
+            '_url' => null,
             '_source' => $record->source,
         ];
     }
@@ -956,25 +1018,25 @@ class ResourcesPage extends Page implements HasTable
 
                     if (!$resource) {
                         InstalledResourceCache::put($serverId, $dir, $name, [
-                            'source'     => 'manual',
+                            'source' => 'manual',
                             'project_id' => null,
                             'version_id' => null,
-                            'name'       => pathinfo($name, PATHINFO_FILENAME),
+                            'name' => pathinfo($name, PATHINFO_FILENAME),
                         ]);
                     }
 
                     $files[] = [
-                        'id'          => md5($dir . $name),
-                        'name'        => $name,
-                        'size'        => $entry['size'] ?? 0,
-                        'type'        => $type,
-                        'directory'   => $dir,
+                        'id' => md5($dir . $name),
+                        'name' => $name,
+                        'size' => $entry['size'] ?? 0,
+                        'type' => $type,
+                        'directory' => $dir,
                         'modified_at' => $entry['modified'] ?? '',
-                        'version'     => $this->extractVersionFromFilename($name),
-                        'loader'      => $this->extractLoaderFromFilename($name),
-                        'source'      => $resource['source'] ?? 'manual',
-                        'project_id'  => $resource['project_id'] ?? null,
-                        'icon_url'    => null,
+                        'version' => $this->extractVersionFromFilename($name),
+                        'loader' => $this->extractLoaderFromFilename($name),
+                        'source' => $resource['source'] ?? 'manual',
+                        'project_id' => $resource['project_id'] ?? null,
+                        'icon_url' => null,
                     ];
                 }
             } catch (Exception) {
@@ -998,6 +1060,7 @@ class ResourcesPage extends Page implements HasTable
                 $key = $file['source'] . ':' . $file['project_id'];
                 $file['icon_url'] = $recordIndex->get($key)['icon'] ?? null;
             }
+
             return $file;
         }, $files);
     }
@@ -1037,7 +1100,7 @@ class ResourcesPage extends Page implements HasTable
     protected function dispatchIdentifyJob(): void
     {
         /** @var Server $server */
-        $server   = Filament::getTenant();
+        $server = Filament::getTenant();
         $serverId = $server->id;
 
         // Ensure the cache reflects what's currently on disk (records new jars as 'manual').
@@ -1070,8 +1133,8 @@ class ResourcesPage extends Page implements HasTable
 
     private function computeUpdatableFiles(): array
     {
-        $serverId  = Filament::getTenant()->id;
-        $tracked   = collect(InstalledResourceCache::all($serverId))->values();
+        $serverId = Filament::getTenant()->id;
+        $tracked = collect(InstalledResourceCache::all($serverId))->values();
         $updatable = [];
 
         foreach ($tracked->filter(fn ($r) => ($r['version_id'] ?? null) === null && !empty($r['project_id'])) as $resource) {
@@ -1079,8 +1142,10 @@ class ResourcesPage extends Page implements HasTable
         }
 
         $withVersion = $tracked->filter(fn ($r) => !empty($r['version_id']) && ($r['source'] ?? '') !== 'manual');
-        $modrinth    = $withVersion->filter(fn ($r) => ($r['source'] ?? '') === 'modrinth');
-        $curseforge  = $withVersion->filter(fn ($r) => ($r['source'] ?? '') === 'curseforge');
+        $modrinth = $withVersion->filter(fn ($r) => ($r['source'] ?? '') === 'modrinth');
+        // Bukkit plugins are CurseForge projects (class 5) — same files endpoint as mods.
+        $curseforge = $withVersion->filter(fn ($r) => in_array($r['source'] ?? '', ['curseforge', 'bukkit'], true));
+        $spigot = $withVersion->filter(fn ($r) => ($r['source'] ?? '') === 'spigot');
 
         if ($modrinth->isNotEmpty()) {
             $baseUrl = config('resources.modrinth_api_url');
@@ -1109,11 +1174,12 @@ class ResourcesPage extends Page implements HasTable
             });
 
             foreach ($modrinth as $resource) {
-                $key      = $resource['directory'] . '/' . $resource['filename'];
-                $poolKey  = md5($resource['directory'] . $resource['filename']);
+                $key = $resource['directory'] . '/' . $resource['filename'];
+                $poolKey = md5($resource['directory'] . $resource['filename']);
                 $response = $responses[$poolKey] ?? null;
                 if ($response instanceof \Throwable || $response === null || $response->failed()) {
                     $updatable[$key] = true;
+
                     continue;
                 }
                 $latest = $response->json()[0] ?? null;
@@ -1124,9 +1190,9 @@ class ResourcesPage extends Page implements HasTable
         }
 
         if ($curseforge->isNotEmpty()) {
-            $cfBaseUrl = config('resources.curseforge_api_url');
-            $cfApiKey  = (string) config('resources.curseforge_api_key');
-            $responses = Http::pool(function ($pool) use ($curseforge, $cfBaseUrl, $cfApiKey) {
+            $cfBaseUrl = $this->curseForgeService->apiBaseUrl();
+            $cfHeaders = $this->curseForgeService->apiHeaders();
+            $responses = Http::pool(function ($pool) use ($curseforge, $cfBaseUrl, $cfHeaders) {
                 foreach ($curseforge as $resource) {
                     $params = ['pageSize' => 50, 'index' => 0];
 
@@ -1137,7 +1203,7 @@ class ResourcesPage extends Page implements HasTable
 
                     $poolKey = md5($resource['directory'] . $resource['filename']);
                     $pool->as($poolKey)
-                        ->withHeader('x-api-key', $cfApiKey)
+                        ->withHeaders($cfHeaders)
                         ->acceptJson()
                         ->connectTimeout(5)
                         ->timeout(15)
@@ -1146,11 +1212,12 @@ class ResourcesPage extends Page implements HasTable
             });
 
             foreach ($curseforge as $resource) {
-                $key      = $resource['directory'] . '/' . $resource['filename'];
-                $poolKey  = md5($resource['directory'] . $resource['filename']);
+                $key = $resource['directory'] . '/' . $resource['filename'];
+                $poolKey = md5($resource['directory'] . $resource['filename']);
                 $response = $responses[$poolKey] ?? null;
                 if ($response instanceof \Throwable || $response === null || $response->failed()) {
                     $updatable[$key] = true;
+
                     continue;
                 }
 
@@ -1160,12 +1227,43 @@ class ResourcesPage extends Page implements HasTable
                 if ($installedLoader && in_array($installedLoader, ['fabric', 'quilt'], true)) {
                     $files = array_filter($files, function ($file) use ($installedLoader) {
                         $gameVersions = array_map('strtolower', $file['gameVersions'] ?? []);
+
                         return in_array($installedLoader, $gameVersions, true);
                     });
                 }
 
                 $latest = array_values($files)[0] ?? null;
                 if ($latest && (string) ($latest['id'] ?? '') !== $resource['version_id']) {
+                    $updatable[$key] = true;
+                }
+            }
+        }
+
+        if ($spigot->isNotEmpty()) {
+            $spigotBaseUrl = config('resources.spigot_api_url');
+            $responses = Http::pool(function ($pool) use ($spigot, $spigotBaseUrl) {
+                foreach ($spigot as $resource) {
+                    $poolKey = md5($resource['directory'] . $resource['filename']);
+                    $pool->as($poolKey)
+                        ->acceptJson()
+                        ->connectTimeout(5)
+                        ->timeout(15)
+                        ->get($spigotBaseUrl . '/resources/' . $resource['project_id'] . '/versions/latest');
+                }
+            });
+
+            foreach ($spigot as $resource) {
+                $key = $resource['directory'] . '/' . $resource['filename'];
+                $poolKey = md5($resource['directory'] . $resource['filename']);
+                $response = $responses[$poolKey] ?? null;
+                if ($response instanceof \Throwable || $response === null || $response->failed()) {
+                    $updatable[$key] = true;
+
+                    continue;
+                }
+
+                $latest = $response->json();
+                if (is_array($latest) && (string) ($latest['id'] ?? '') !== (string) $resource['version_id']) {
                     $updatable[$key] = true;
                 }
             }
@@ -1251,7 +1349,7 @@ class ResourcesPage extends Page implements HasTable
         }
 
         $gameVersion = $this->extractMcVersion($record->name);
-        $loader      = $this->extractLoaderFromFilename($record->name);
+        $loader = $this->extractLoaderFromFilename($record->name);
 
         if ($meta) {
             $versions = $this->getVersions($meta['project_id'] ?? null, $meta['source'] ?? '', $gameVersion, $loader);
@@ -1315,10 +1413,10 @@ class ResourcesPage extends Page implements HasTable
     private function getUrlBySource(string $source, string $projectId, string $versionId): ?string
     {
         return match ($source) {
-            'modrinth'             => $this->modrinthService->getDownloadUrl($versionId),
+            'modrinth' => $this->modrinthService->getDownloadUrl($versionId),
             'curseforge', 'bukkit' => $this->curseForgeService->getDownloadUrl((int) $projectId, (int) $versionId),
-            'spigot'               => $this->spigotService->getDownloadUrl((int) $projectId, $versionId),
-            default                => null,
+            'spigot' => $this->spigotService->getDownloadUrl((int) $projectId, $versionId),
+            default => null,
         };
     }
 
@@ -1332,17 +1430,19 @@ class ResourcesPage extends Page implements HasTable
                     ->get(config('resources.modrinth_api_url') . '/version/' . $versionId);
                 if ($response->successful()) {
                     $text = $response->json()['changelog'] ?? null;
+
                     return $text ? trim($text) : 'No changelog provided.';
                 }
             } elseif (in_array($source, ['curseforge', 'bukkit'], true)) {
-                $cfApiKey = (string) config('resources.curseforge_api_key');
+                $cfHeaders = $this->curseForgeService->apiHeaders();
                 $response = Http::withUserAgent('ResourcesPlugin')
-                    ->withHeader('x-api-key', $cfApiKey)
+                    ->withHeaders($cfHeaders)
                     ->acceptJson()
                     ->timeout(8)
-                    ->get(config('resources.curseforge_api_url') . '/mods/' . $projectId . '/files/' . $versionId . '/changelog');
+                    ->get($this->curseForgeService->apiBaseUrl() . '/mods/' . $projectId . '/files/' . $versionId . '/changelog');
                 if ($response->successful()) {
                     $html = $response->json()['data'] ?? null;
+
                     return $html ? trim(strip_tags($html)) : 'No changelog provided.';
                 }
             }
@@ -1465,23 +1565,23 @@ class ResourcesPage extends Page implements HasTable
             $compositeId = md5($project['id'].$project['source'].($this->searchQuery ?? '').$this->projectType.$this->source);
 
             $cache[$compositeId] = [
-                'id'             => $compositeId,
-                'project_id'     => (string) $project['id'],
-                'slug'           => $project['slug'],
-                'name'           => $project['name'],
-                'description'    => $project['description'] ?? '',
-                'author'         => $project['author'],
-                'icon'           => $project['icon'],
-                'downloads'      => $project['downloads'],
-                'type'           => $project['type'],
-                'loader'         => $project['loader'] ?? null,
+                'id' => $compositeId,
+                'project_id' => (string) $project['id'],
+                'slug' => $project['slug'],
+                'name' => $project['name'],
+                'description' => $project['description'] ?? '',
+                'author' => $project['author'],
+                'icon' => $project['icon'],
+                'downloads' => $project['downloads'],
+                'type' => $project['type'],
+                'loader' => $project['loader'] ?? null,
                 'loader_detected' => true,
-                'type_detected'  => 2,
-                'source'         => $project['source'],
-                'search_query'   => $this->searchQuery ?? '',
-                'project_type'   => $this->projectType,
-                'api_page'       => $page,
-                'api_index'      => $project['api_index'] ?? (($page - 1) * self::API_PAGE_SIZE + $index),
+                'type_detected' => 2,
+                'source' => $project['source'],
+                'search_query' => $this->searchQuery ?? '',
+                'project_type' => $this->projectType,
+                'api_page' => $page,
+                'api_index' => $project['api_index'] ?? (($page - 1) * self::API_PAGE_SIZE + $index),
             ];
         }
 
@@ -1600,29 +1700,29 @@ class ResourcesPage extends Page implements HasTable
         $knownLoaders = ['neoforge', 'fabric', 'forge', 'quilt', 'liteloader'];
 
         return collect($results['hits'] ?? [])->map(function ($hit) use ($knownLoaders, $pluginIds) {
-            $cats  = array_map('strtolower', $hit['categories'] ?? []);
+            $cats = array_map('strtolower', $hit['categories'] ?? []);
             $found = array_values(array_filter($knownLoaders, fn ($l) => in_array($l, $cats)));
             $loader = match (count($found)) {
-                0       => null,
-                1       => $found[0],
+                0 => null,
+                1 => $found[0],
                 default => 'multi',
             };
 
             return [
-                'id'          => $hit['project_id'],
-                'slug'        => $hit['slug'],
-                'name'        => $hit['title'],
+                'id' => $hit['project_id'],
+                'slug' => $hit['slug'],
+                'name' => $hit['title'],
                 'description' => $hit['description'],
-                'author'      => $hit['author'] ?? 'Unknown',
-                'icon'        => $hit['icon_url'] ?? null,
-                'downloads'   => $hit['downloads'] ?? 0,
-                'type'        => $this->projectType !== 'all'
+                'author' => $hit['author'] ?? 'Unknown',
+                'icon' => $hit['icon_url'] ?? null,
+                'downloads' => $hit['downloads'] ?? 0,
+                'type' => $this->projectType !== 'all'
                     ? $this->projectType
                     : (in_array((string) $hit['project_id'], $pluginIds, true) || $this->isModrinthPlugin($hit)
                         ? 'plugin'
                         : 'mod'),
-                'loader'      => $loader,
-                'source'      => 'modrinth',
+                'loader' => $loader,
+                'source' => 'modrinth',
             ];
         });
     }
@@ -1657,7 +1757,7 @@ class ResourcesPage extends Page implements HasTable
         }
 
         $cfLoaderNames = ['neoforge', 'fabric', 'forge', 'quilt', 'liteloader'];
-        $cfLoaderMap   = [1 => 'forge', 3 => 'liteloader', 4 => 'fabric', 5 => 'quilt', 6 => 'neoforge'];
+        $cfLoaderMap = [1 => 'forge', 3 => 'liteloader', 4 => 'fabric', 5 => 'quilt', 6 => 'neoforge'];
 
         return collect($results['data'] ?? [])->map(function ($mod) use ($source, $cfLoaderNames, $cfLoaderMap) {
             // Primary: scan gameVersions strings in latestFiles — more reliable than modLoaderType.
@@ -1678,24 +1778,24 @@ class ResourcesPage extends Page implements HasTable
             }
 
             $loader = match (count($found)) {
-                0       => null,
-                1       => $found[0],
+                0 => null,
+                1 => $found[0],
                 default => 'multi',
             };
 
             return [
-                'id'          => (string) $mod['id'],
-                'slug'        => $mod['slug'],
-                'name'        => $mod['name'],
+                'id' => (string) $mod['id'],
+                'slug' => $mod['slug'],
+                'name' => $mod['name'],
                 'description' => $mod['summary'] ?? '',
-                'author'      => $mod['authors'][0]['name'] ?? 'Unknown',
-                'icon'        => $mod['logo']['thumbnailUrl'] ?? null,
-                'downloads'   => $mod['downloadCount'] ?? 0,
-                'type'        => $this->projectType !== 'all'
+                'author' => $mod['authors'][0]['name'] ?? 'Unknown',
+                'icon' => $mod['logo']['thumbnailUrl'] ?? null,
+                'downloads' => $mod['downloadCount'] ?? 0,
+                'type' => $this->projectType !== 'all'
                     ? $this->projectType
                     : (($mod['classId'] ?? null) === CurseForgeService::CLASS_BUKKIT_PLUGINS ? 'plugin' : 'mod'),
-                'loader'      => $loader,
-                'source'      => $source,
+                'loader' => $loader,
+                'source' => $source,
             ];
         });
     }
@@ -1771,10 +1871,10 @@ class ResourcesPage extends Page implements HasTable
             $filename = urldecode(basename(parse_url($downloadUrl, PHP_URL_PATH) ?? ''));
             if ($filename) {
                 InstalledResourceCache::put($server->id, $targetDir, $filename, [
-                    'source'     => $record->source,
+                    'source' => $record->source,
                     'project_id' => $record->project_id,
                     'version_id' => $versionId,
-                    'name'       => $record->name,
+                    'name' => $record->name,
                 ]);
             }
 

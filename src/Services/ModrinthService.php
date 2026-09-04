@@ -177,7 +177,7 @@ class ModrinthService
      * `project_id` and `id` (the version id).
      *
      * @param  array<int, string>  $hashes
-     * @return array<string, array<string, mixed>>  Map of hash => version object
+     * @return array<string, array<string, mixed>> Map of hash => version object
      */
     public function lookupByHashes(array $hashes, string $algorithm = 'sha1'): array
     {

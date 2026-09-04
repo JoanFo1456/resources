@@ -6,11 +6,32 @@ return [
     | CurseForge API Key
     |--------------------------------------------------------------------------
     |
-    | Required for the CurseForge and Bukkit platforms. Get one from
+    | Recommended for the CurseForge and Bukkit platforms. Get one from
     | https://console.curseforge.com/
+    |
+    | Without a key those platforms fall back to the public proxy configured
+    | below, so browsing still works out of the box. Setting your own key is
+    | still preferable: it is the officially supported path, runs on your own
+    | quota, and does not depend on a third party staying online.
     |
     */
     'curseforge_api_key' => env('CURSEFORGE_API_KEY', ''),
+
+    /*
+    |--------------------------------------------------------------------------
+    | CurseForge Keyless Fallback Proxy
+    |--------------------------------------------------------------------------
+    |
+    | Public mirror of the CurseForge API, used only when no API key is set.
+    | It exposes the same routes and response shapes, so it is a drop-in.
+    |
+    | This is a third-party service running on somebody else's API key: it has
+    | no SLA and can rate-limit or disappear. Set 'curseforge_proxy_enabled' to
+    | false to disable the fallback entirely and require your own key instead.
+    |
+    */
+    'curseforge_proxy_enabled' => env('CURSEFORGE_PROXY_ENABLED', true),
+    'curseforge_proxy_url' => env('CURSEFORGE_PROXY_URL', 'https://api.curse.tools/v1/cf'),
 
     /*
     |--------------------------------------------------------------------------

@@ -40,12 +40,62 @@ class CurseForgeService
         $this->cacheTtl = (int) config('resources.cache_ttl');
     }
 
+    /** Whether an official CurseForge API key is configured. */
+    public function hasApiKey(): bool
+    {
+        return $this->apiKey !== '';
+    }
+
+    /** Whether the keyless public mirror may be used as a fallback. */
+    protected function proxyEnabled(): bool
+    {
+        return (bool) config('resources.curseforge_proxy_enabled', true)
+            && (string) config('resources.curseforge_proxy_url', '') !== '';
+    }
+
+    /** Cache flag marking the official key as currently rate-limited. */
+    protected function rateLimitedCacheKey(): string
+    {
+        return 'curseforge_rate_limited';
+    }
+
     /**
-     * The CurseForge API requires an API key for every request.
+     * Requests go to the keyless mirror when there is no API key at all, or while the official
+     * key is known to be rate-limited.
+     */
+    public function usingProxy(): bool
+    {
+        if (!$this->proxyEnabled()) {
+            return false;
+        }
+
+        return !$this->hasApiKey() || Cache::has($this->rateLimitedCacheKey());
+    }
+
+    /**
+     * CurseForge is usable when we either hold a key or can fall back to the keyless mirror.
      */
     public function isConfigured(): bool
     {
-        return $this->apiKey !== '';
+        return $this->hasApiKey() || $this->proxyEnabled();
+    }
+
+    /** Effective API base URL, for callers that build their own pooled requests. */
+    public function apiBaseUrl(): string
+    {
+        return $this->usingProxy()
+            ? (string) config('resources.curseforge_proxy_url')
+            : $this->baseUrl;
+    }
+
+    /**
+     * Effective auth headers, for callers that build their own pooled requests.
+     *
+     * @return array<string, string>
+     */
+    public function apiHeaders(): array
+    {
+        return $this->usingProxy() ? [] : ['x-api-key' => $this->apiKey];
     }
 
     /**
@@ -88,7 +138,7 @@ class CurseForgeService
             $params['classId'] = $classId;
         }
 
-        $response = $this->client()->get('/mods/search', $params);
+        $response = $this->request('get', '/mods/search', $params);
 
         $this->ensureAuthorized($response);
 
@@ -136,7 +186,7 @@ class CurseForgeService
             return Cache::get($cacheKey);
         }
 
-        $response = $this->client()->get("/mods/{$modId}/files", [
+        $response = $this->request('get', "/mods/{$modId}/files", [
             'pageSize' => $pageSize,
             'index' => $index,
         ]);
@@ -183,7 +233,7 @@ class CurseForgeService
      * Chunks into batches of 50 to stay within API limits.
      *
      * @param  int[]  $fileIds
-     * @return array<int, string|null>  Map of fileId → downloadUrl (null if unavailable)
+     * @return array<int, string|null> Map of fileId → downloadUrl (null if unavailable)
      */
     public function getDownloadUrls(array $fileIds): array
     {
@@ -194,7 +244,7 @@ class CurseForgeService
         $results = [];
 
         foreach (array_chunk($fileIds, 50) as $chunk) {
-            $response = $this->client()->post('/mods/files', ['fileIds' => $chunk]);
+            $response = $this->request('post', '/mods/files', ['fileIds' => $chunk]);
 
             if ($response->failed()) {
                 continue;
@@ -273,7 +323,7 @@ class CurseForgeService
      * a `file` object with `id` (the file/version id) and `fileFingerprint`.
      *
      * @param  int[]  $fingerprints
-     * @return array<int, array<string, mixed>>  The exactMatches array (empty when nothing matches)
+     * @return array<int, array<string, mixed>> The exactMatches array (empty when nothing matches)
      *
      * @throws RuntimeException When the API key is rejected
      */
@@ -285,7 +335,7 @@ class CurseForgeService
             return [];
         }
 
-        $response = $this->client()->post('/fingerprints', [
+        $response = $this->request('post', '/fingerprints', [
             'fingerprints' => $fingerprints,
         ]);
 
@@ -327,7 +377,7 @@ class CurseForgeService
      */
     private static function murmur2(string $data, int $seed): int
     {
-        $m = 0x5bd1e995;
+        $m = 0x5BD1E995;
         $r = 24;
 
         $len = strlen($data);
@@ -405,7 +455,7 @@ class CurseForgeService
             return null;
         }
 
-        $response = $this->client()->get("/mods/{$modId}/files/{$fileId}");
+        $response = $this->request('get', "/mods/{$modId}/files/{$fileId}");
 
         if ($response->failed()) {
             return null;
@@ -423,13 +473,13 @@ class CurseForgeService
             return null;
         }
 
-        $response = $this->client()->get("/mods/{$modId}/files/{$fileId}");
+        $response = $this->request('get', "/mods/{$modId}/files/{$fileId}");
 
         if ($response->failed()) {
             return null;
         }
 
-        $data        = $response->json()['data'] ?? [];
+        $data = $response->json()['data'] ?? [];
         $downloadUrl = $data['downloadUrl'] ?? null;
 
         if ($downloadUrl === null) {
@@ -443,13 +493,44 @@ class CurseForgeService
         return str_replace('edge.forgecdn.net', 'mediafilez.forgecdn.net', $downloadUrl);
     }
 
-    protected function client(): PendingRequest
+    protected function client(bool $forceProxy = false): PendingRequest
     {
-        return Http::baseUrl($this->baseUrl)
-            ->withHeader('x-api-key', $this->apiKey)
+        $useProxy = $forceProxy || $this->usingProxy();
+
+        $request = Http::baseUrl($useProxy ? (string) config('resources.curseforge_proxy_url') : $this->baseUrl)
             ->acceptJson()
             ->connectTimeout(5)
-            ->timeout(15);
+            ->timeout(15)
+            // The mirror sits behind Cloudflare and answers with a 302. Guzzle downgrades a
+            // redirected POST to GET by default, which silently drops the body and breaks the
+            // /mods/files and /fingerprints batch endpoints; strict mode keeps the method.
+            ->withOptions(['allow_redirects' => ['strict' => true]]);
+
+        return $useProxy ? $request : $request->withHeader('x-api-key', $this->apiKey);
+    }
+
+    /**
+     * Send a request, transparently failing over to the keyless mirror when the official API
+     * rate-limits us (429). The throttled state is remembered briefly so following calls go
+     * straight to the mirror instead of spending a rejected round-trip on the official API first.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    protected function request(string $method, string $path, array $data = []): Response
+    {
+        $send = fn (PendingRequest $client): Response => $method === 'post'
+            ? $client->post($path, $data)
+            : $client->get($path, $data);
+
+        $response = $send($this->client());
+
+        if ($response->status() === 429 && !$this->usingProxy() && $this->proxyEnabled()) {
+            Cache::put($this->rateLimitedCacheKey(), true, now()->addMinutes(5));
+
+            return $send($this->client(forceProxy: true));
+        }
+
+        return $response;
     }
 
     /**
@@ -457,6 +538,12 @@ class CurseForgeService
      */
     protected function ensureAuthorized(Response $response): void
     {
+        // Only meaningful for the official API — the mirror sends no key, so a 401/403 from it
+        // is a proxy/Cloudflare problem, not a bad key, and must not be reported as one.
+        if ($this->usingProxy()) {
+            return;
+        }
+
         if (in_array($response->status(), [401, 403], true)) {
             throw new RuntimeException("CurseForge API key is invalid or unauthorised (HTTP {$response->status()}). Please check your CURSEFORGE_API_KEY.");
         }

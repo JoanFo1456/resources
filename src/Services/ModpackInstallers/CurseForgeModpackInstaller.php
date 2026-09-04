@@ -93,10 +93,10 @@ class CurseForgeModpackInstaller
      */
     private function waitForDownload(DaemonFileRepository $fileRepo, string $root, string $filename, int $maxSeconds = 540): void
     {
-        $deadline    = time() + $maxSeconds;
-        $lastSize    = -1;
+        $deadline = time() + $maxSeconds;
+        $lastSize = -1;
         $stablePolls = 0;
-        $appeared    = false;
+        $appeared = false;
 
         while (time() < $deadline) {
             sleep(3);
@@ -113,6 +113,7 @@ class CurseForgeModpackInstaller
                 if ($appeared) {
                     return;
                 }
+
                 continue;
             }
 
@@ -317,8 +318,8 @@ class CurseForgeModpackInstaller
 
         foreach ($modEntries as $modEntry) {
             $modProjectId = (int) $modEntry['projectID'];
-            $modFileId    = (int) $modEntry['fileID'];
-            $modUrl       = $downloadUrls[$modFileId] ?? null;
+            $modFileId = (int) $modEntry['fileID'];
+            $modUrl = $downloadUrls[$modFileId] ?? null;
 
             if (!$modUrl) {
                 continue;
@@ -338,12 +339,12 @@ class CurseForgeModpackInstaller
                     $filename = urldecode(basename(parse_url($modUrl, PHP_URL_PATH) ?? ''));
                     if ($filename) {
                         InstalledResourceCache::put($serverId, '/mods', $filename, [
-                            'source'     => 'curseforge',
+                            'source' => 'curseforge',
                             'project_id' => (string) $modProjectId,
                             'version_id' => (string) $modFileId,
-                            'name'       => pathinfo($filename, PATHINFO_FILENAME),
-                            'directory'  => '/mods',
-                            'filename'   => $filename,
+                            'name' => pathinfo($filename, PATHINFO_FILENAME),
+                            'directory' => '/mods',
+                            'filename' => $filename,
                         ]);
                     }
                 }
@@ -372,7 +373,7 @@ class CurseForgeModpackInstaller
                 ->timeout(10)
                 ->get($url);
 
-            $status   = $response->status();
+            $status = $response->status();
             $location = (string) $response->header('Location');
 
             return $status >= 300 && $status < 400 && str_contains($location, 'forgecdn.net');

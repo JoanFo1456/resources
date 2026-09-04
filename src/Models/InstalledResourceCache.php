@@ -43,7 +43,7 @@ class InstalledResourceCache
         $all = static::all($serverId);
         $all[$directory . '/' . $filename] = array_merge($data, [
             'directory' => $directory,
-            'filename'  => $filename,
+            'filename' => $filename,
         ]);
         static::writeJsonFile(static::path($serverId), $all);
     }

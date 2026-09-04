@@ -3,17 +3,18 @@
 namespace JoanFo\Resources\Filament\Server\Pages;
 
 use App\Models\Server;
+use Exception;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
-use Filament\Tables\Columns\ImageColumn;
 use Filament\Support\Enums\TextSize;
-use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\Layout\Split;
 use Filament\Tables\Columns\Layout\Stack;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
@@ -21,14 +22,13 @@ use Illuminate\Contracts\Pagination\Paginator as PaginatorContract;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
-use Exception;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use JoanFo\Resources\Jobs\InstallModpackJob;
 use JoanFo\Resources\Models\InstalledModpackCache;
-use JoanFo\Resources\Models\PendingModpackCache;
 use JoanFo\Resources\Models\Modpack;
+use JoanFo\Resources\Models\PendingModpackCache;
 use JoanFo\Resources\Services\CurseForgeService;
 use JoanFo\Resources\Services\ModrinthService;
 use RuntimeException;
@@ -70,6 +70,9 @@ class ModpacksPage extends Page implements HasTable
     {
         $server = Filament::getTenant();
 
+        if (!$server) {
+            return false;
+        }
 
         $server->loadMissing('egg');
 
@@ -135,7 +138,7 @@ class ModpacksPage extends Page implements HasTable
     public function getInstalledModpacks(): Collection
     {
         $serverId = Filament::getTenant()->id;
-        $modpack  = InstalledModpackCache::get($serverId);
+        $modpack = InstalledModpackCache::get($serverId);
 
         if (!$modpack) {
             return collect();
@@ -186,7 +189,7 @@ class ModpacksPage extends Page implements HasTable
 
                 return $this->curseForgeFileLabel($latest);
             }
-        } catch (\Exception) {
+        } catch (Exception) {
             return null;
         }
 
@@ -227,10 +230,9 @@ class ModpacksPage extends Page implements HasTable
                     ->required(),
             ])
             ->action(fn (array $data) => $this->doUpdateModpack($data['version_id']))
-            ->modalHeading(fn () =>
-                trans('resources::resources.installed_modpacks.update_confirm', [
-                    'name' => InstalledModpackCache::get(Filament::getTenant()->id)['name'] ?? '',
-                ])
+            ->modalHeading(fn () => trans('resources::resources.installed_modpacks.update_confirm', [
+                'name' => InstalledModpackCache::get(Filament::getTenant()->id)['name'] ?? '',
+            ])
             )
             ->modalSubmitActionLabel(trans('resources::resources.installed_modpacks.update'))
             ->modalWidth('md');
@@ -254,7 +256,7 @@ class ModpacksPage extends Page implements HasTable
     public function doUpdateModpack(string $versionId): void
     {
         $serverId = Filament::getTenant()->id;
-        $modpack  = InstalledModpackCache::get($serverId);
+        $modpack = InstalledModpackCache::get($serverId);
 
         if (!$modpack || !in_array($modpack['source'] ?? '', ['modrinth', 'curseforge'], true)) {
             return;
@@ -266,8 +268,8 @@ class ModpacksPage extends Page implements HasTable
                     ->first(fn ($f) => (string) ($f['id'] ?? '') === (string) $versionId) ?? [];
                 $latestName = $file ? $this->curseForgeFileLabel($file) : '';
             } else {
-                $versions   = $this->modrinthService->getProjectVersions($modpack['project_id']);
-                $version    = collect($versions)->firstWhere('id', $versionId) ?? [];
+                $versions = $this->modrinthService->getProjectVersions($modpack['project_id']);
+                $version = collect($versions)->firstWhere('id', $versionId) ?? [];
                 $latestName = ($version['name'] ?? '')
                     .' ('.implode(', ', array_slice($version['game_versions'] ?? [], 0, 2)).')';
             }
@@ -284,7 +286,7 @@ class ModpacksPage extends Page implements HasTable
             );
 
             InstalledModpackCache::put($serverId, array_merge($modpack, [
-                'version_id'   => $versionId,
+                'version_id' => $versionId,
                 'version_name' => $latestName,
             ]));
 
@@ -293,7 +295,7 @@ class ModpacksPage extends Page implements HasTable
                 ->title(trans('resources::resources.modpacks.queued'))
                 ->body(trans('resources::resources.modpacks.queued_body', ['name' => $modpack['name']]))
                 ->send();
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             Notification::make()
                 ->danger()
                 ->title(trans('resources::resources.modpacks.failed'))
@@ -344,13 +346,13 @@ class ModpacksPage extends Page implements HasTable
                     ->badge()
                     ->color(fn ($state) => match ($state) {
                         'curseforge' => 'warning',
-                        'modrinth'   => 'success',
-                        default      => 'gray',
+                        'modrinth' => 'success',
+                        default => 'gray',
                     })
                     ->icon(fn ($state) => match ($state) {
-                        'modrinth'   => 'tabler-leaf',
+                        'modrinth' => 'tabler-leaf',
                         'curseforge' => 'tabler-flame',
-                        default      => 'tabler-package',
+                        default => 'tabler-package',
                     })
                     ->formatStateUsing(fn ($state) => ucfirst($state)),
             ])
@@ -399,7 +401,7 @@ class ModpacksPage extends Page implements HasTable
                     ->icon('tabler-eye')
                     ->color('gray')
                     ->modalContent(fn (Modpack $record) => view('resources::filament.modals.project-preview', [
-                        'record'  => $record,
+                        'record' => $record,
                         'details' => $this->fetchModpackPreview($record),
                     ]))
                     ->schema(fn (Modpack $record) => [
@@ -486,13 +488,13 @@ class ModpacksPage extends Page implements HasTable
                                 ->badge()
                                 ->color(fn ($state) => match ($state) {
                                     'curseforge' => 'warning',
-                                    'modrinth'   => 'success',
-                                    default      => 'gray',
+                                    'modrinth' => 'success',
+                                    default => 'gray',
                                 })
                                 ->icon(fn ($state) => match ($state) {
-                                    'modrinth'   => 'tabler-leaf',
+                                    'modrinth' => 'tabler-leaf',
                                     'curseforge' => 'tabler-flame',
-                                    default      => 'tabler-package',
+                                    default => 'tabler-package',
                                 })
                                 ->formatStateUsing(fn ($state) => ucfirst($state))
                                 ->alignEnd(),
@@ -732,7 +734,7 @@ class ModpacksPage extends Page implements HasTable
 
                 if ($response->successful()) {
                     $data = $response->json();
-                    $data['_url']    = 'https://modrinth.com/modpack/' . ($data['slug'] ?? $modpack->project_id);
+                    $data['_url'] = 'https://modrinth.com/modpack/' . ($data['slug'] ?? $modpack->project_id);
                     $data['_source'] = 'modrinth';
 
                     return $data;
@@ -742,17 +744,17 @@ class ModpacksPage extends Page implements HasTable
                     return [];
                 }
 
-                $cfBaseUrl = config('resources.curseforge_api_url');
-                $cfApiKey  = (string) config('resources.curseforge_api_key');
+                $cfBaseUrl = $this->curseForgeService->apiBaseUrl();
+                $cfHeaders = $this->curseForgeService->apiHeaders();
 
                 ['mod' => $modResponse, 'desc' => $descResponse] = Http::pool(fn ($pool) => [
                     $pool->as('mod')
-                        ->withHeader('x-api-key', $cfApiKey)
+                        ->withHeaders($cfHeaders)
                         ->acceptJson()
                         ->timeout(10)
                         ->get($cfBaseUrl . '/mods/' . $modpack->project_id),
                     $pool->as('desc')
-                        ->withHeader('x-api-key', $cfApiKey)
+                        ->withHeaders($cfHeaders)
                         ->acceptJson()
                         ->timeout(10)
                         ->get($cfBaseUrl . '/mods/' . $modpack->project_id . '/description'),
@@ -760,10 +762,10 @@ class ModpacksPage extends Page implements HasTable
 
                 if ($modResponse->successful()) {
                     $data = $modResponse->json()['data'] ?? [];
-                    $data['_url']          = 'https://www.curseforge.com/minecraft/modpacks/' . ($data['slug'] ?? $modpack->project_id);
-                    $data['_source']       = 'curseforge';
+                    $data['_url'] = 'https://www.curseforge.com/minecraft/modpacks/' . ($data['slug'] ?? $modpack->project_id);
+                    $data['_source'] = 'curseforge';
                     $data['_body_is_html'] = true;
-                    $data['body']          = $descResponse->successful() ? ($descResponse->json()['data'] ?? null) : null;
+                    $data['body'] = $descResponse->successful() ? ($descResponse->json()['data'] ?? null) : null;
 
                     return $data;
                 }
@@ -777,15 +779,16 @@ class ModpacksPage extends Page implements HasTable
     public function getPendingInstall(): ?array
     {
         $serverId = Filament::getTenant()->id;
-        $pending  = PendingModpackCache::get($serverId);
+        $pending = PendingModpackCache::get($serverId);
 
         if ($pending !== null) {
-            $installed   = InstalledModpackCache::get($serverId);
-            $queuedAt    = $pending['queued_at'] ?? null;
+            $installed = InstalledModpackCache::get($serverId);
+            $queuedAt = $pending['queued_at'] ?? null;
             $installedAt = $installed['installed_at'] ?? null;
 
             if ($installedAt && $queuedAt && $installedAt >= $queuedAt) {
                 PendingModpackCache::remove($serverId);
+
                 return null;
             }
         }
@@ -802,9 +805,9 @@ class ModpacksPage extends Page implements HasTable
         $versionName = collect($versions)->firstWhere('id', $versionId)['name'] ?? null;
 
         PendingModpackCache::put($server->id, [
-            'name'      => $modpack->name,
-            'icon_url'  => $modpack->icon ?: null,
-            'source'    => $modpack->source,
+            'name' => $modpack->name,
+            'icon_url' => $modpack->icon ?: null,
+            'source' => $modpack->source,
             'queued_at' => now()->toISOString(),
         ]);
 

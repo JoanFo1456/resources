@@ -28,6 +28,10 @@ class InstalledModpacksPage extends Page implements HasTable
     {
         $server = Filament::getTenant();
 
+        if (!$server) {
+            return false;
+        }
+
         $server->loadMissing('egg');
 
         return parent::canAccess() && in_array('minecraft', $server->egg->tags ?? []);

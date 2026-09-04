@@ -57,13 +57,13 @@ class InstallModpackJob implements ShouldQueue
             $this->switchEggForModloader($modloader);
 
             InstalledModpackCache::put($this->server->id, [
-                'name'         => $this->modpackName,
-                'source'       => $this->source,
-                'version_id'   => $this->versionId,
-                'project_id'   => $this->projectId,
-                'modloader'    => $modloader,
+                'name' => $this->modpackName,
+                'source' => $this->source,
+                'version_id' => $this->versionId,
+                'project_id' => $this->projectId,
+                'modloader' => $modloader,
                 'version_name' => $this->versionName,
-                'icon_url'     => $this->iconUrl,
+                'icon_url' => $this->iconUrl,
                 'installed_at' => now()->toISOString(),
             ]);
 

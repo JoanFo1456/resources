@@ -70,7 +70,7 @@ class IdentifyInstalledResourcesJob implements ShouldQueue
 
         try {
             return Carbon::parse($checkedAt)->lt(now()->subDays(self::RECHECK_AFTER_DAYS));
-        } catch (\Exception) {
+        } catch (Exception) {
             return true;
         }
     }
@@ -96,7 +96,7 @@ class IdentifyInstalledResourcesJob implements ShouldQueue
         $entries = [];
         foreach ($unidentified as $resource) {
             $directory = $resource['directory'] ?? '';
-            $filename  = $resource['filename'] ?? '';
+            $filename = $resource['filename'] ?? '';
             if ($directory === '' || $filename === '') {
                 continue;
             }
@@ -113,10 +113,10 @@ class IdentifyInstalledResourcesJob implements ShouldQueue
             }
 
             $entries[] = [
-                'directory'   => $directory,
-                'filename'    => $filename,
-                'name'        => $resource['name'] ?? pathinfo($filename, PATHINFO_FILENAME),
-                'sha1'        => sha1($bytes),
+                'directory' => $directory,
+                'filename' => $filename,
+                'name' => $resource['name'] ?? pathinfo($filename, PATHINFO_FILENAME),
+                'sha1' => sha1($bytes),
                 'fingerprint' => CurseForgeService::fingerprint($bytes),
             ];
 
@@ -165,12 +165,13 @@ class IdentifyInstalledResourcesJob implements ShouldQueue
                 $version = $modrinthMatches[$entry['sha1']];
                 if (!empty($version['project_id']) && !empty($version['id'])) {
                     InstalledResourceCache::put($serverId, $entry['directory'], $entry['filename'], [
-                        'source'     => 'modrinth',
+                        'source' => 'modrinth',
                         'project_id' => (string) $version['project_id'],
                         'version_id' => (string) $version['id'],
-                        'name'       => $entry['name'],
+                        'name' => $entry['name'],
                         'checked_at' => $now,
                     ]);
+
                     continue;
                 }
             }
@@ -178,22 +179,23 @@ class IdentifyInstalledResourcesJob implements ShouldQueue
             $match = $curseForgeByFingerprint[$entry['fingerprint']] ?? null;
             if ($match && !empty($match['id']) && !empty($match['file']['id'])) {
                 InstalledResourceCache::put($serverId, $entry['directory'], $entry['filename'], [
-                    'source'     => 'curseforge',
+                    'source' => 'curseforge',
                     'project_id' => (string) $match['id'],
                     'version_id' => (string) $match['file']['id'],
-                    'name'       => $entry['name'],
+                    'name' => $entry['name'],
                     'checked_at' => $now,
                 ]);
+
                 continue;
             }
 
             // No match on either platform: keep it manual but stamp checked_at so we don't
             // re-hash and re-query it every run — it's retried only after RECHECK_AFTER_DAYS.
             InstalledResourceCache::put($serverId, $entry['directory'], $entry['filename'], [
-                'source'     => 'manual',
+                'source' => 'manual',
                 'project_id' => null,
                 'version_id' => null,
-                'name'       => $entry['name'],
+                'name' => $entry['name'],
                 'checked_at' => $now,
             ]);
         }
